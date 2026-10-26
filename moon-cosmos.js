@@ -19,9 +19,11 @@ const CROP_NUDGE = { x: 0, y: 0 }                // px; fine-tune the background
 const PLANETS = true                             // each weekly reset shows the next body: Moon, Mercury, Venus, Mars, Jupiter, Saturn, Uranus, Neptune
 const SHOW_LINE = false                          // the thin titanium line under the countdown
 const HERO_FONT = ""                             // countdown font: "" = system light, or e.g. "Avenir-Light", "Futura-Medium", "Didot", "Optima-Regular"
+const RING_MIN_TILT_DEG = 10                       // Saturn: the real rings are almost edge-on in 2026 (a thin line); this opens them to at least this angle so the ring detail shows (0 = true angle)
 const SHOW_NAME = false                          // true brings back the body name under the planet
 const EFFECTS = true                            // city lights + aurora on Earth, Sun flares, Jupiter moon shadows, ring shadow, eclipses, reset-hour burst
 const FORCE_BODY = ""                           // testing: force one body, e.g. "Jupiter"
+const SHOW_SUNSPOTS = false                        // dark spots on the Sun
 const FANCY = true                               // extra atmosphere: nebula glow, constellation, sparkles, gold dust (new spots every refresh)
 const REAL = true                                // real physics: real rotation speeds, real Moon phase and position, real planet phases seen from Earth (false = the earlier stylised motion)
 const SPIN_STEP_DEG = 20                         // planets turn this many degrees every 10 minutes (0 = no spin); 20 means a full turn every 3 hours
@@ -431,7 +433,7 @@ function globe() {
     if (c[2] < -0.25) seas.push({ c, b: tangentBasis(c), rx: 0.05 + 0.1 * r(), ry: 0.05 + 0.08 * r(), dep: 0.45 + 0.35 * r() })
   }
   const craters = NAMED.map(([x, y, cr, rays, dark]) => ({ c: discToSphere(x, y), r: cr, rays, dark }))
-  for (let n = 0; n < 180; n++) craters.push({ c: norm3(randUnit()), r: 0.012 + 0.05 * Math.pow(r(), 2.4), rays: 0, dark: 0 })
+  for (let n = 0; n < 650; n++) craters.push({ c: norm3(randUnit()), r: Math.min(0.1, 0.017 / Math.sqrt(1 - r() * 0.99)), rays: 0, dark: 0, fresh: r() < 0.25 })   // power-law sizes: many small, few large
   for (const cr of craters) {
     cr.b = tangentBasis(cr.c)
     if (cr.rays) cr.rayAngs = Array.from({ length: Math.round(6 + 6 * cr.rays) }, () => [r() * Math.PI * 2, 0.6 + 0.4 * r()])
@@ -474,19 +476,56 @@ function pngFromRGBA(px, w, h) {
           blockLeft = len
         }
         const v = i < 0 ? 0 : px[y * w * 4 + i]
-        out[o++] = v; a = (a + v) % 65521; b = (b + a) % 65521; done++; blockLeft--
+        out[o++] = v; a += v; b += a; done++; blockLeft--
       }
+      a %= 65521; b %= 65521                       // checksum modulo once per row (exact in doubles)
     }
     u32(((b << 16) | a) >>> 0)
   })
   chunk("IEND", 0, () => {})
-  const T = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
-  let s = ""
+  const T = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/", tc = []
+  for (let i = 0; i < 64; i++) tc.push(T.charCodeAt(i))
+  const parts = []
+  let buf = []
   for (let i = 0; i < out.length; i += 3) {
     const n = (out[i] << 16) | ((out[i + 1] || 0) << 8) | (out[i + 2] || 0)
-    s += T[n >>> 18] + T[(n >>> 12) & 63] + (i + 1 < out.length ? T[(n >>> 6) & 63] : "=") + (i + 2 < out.length ? T[n & 63] : "=")
+    buf.push(tc[n >>> 18], tc[(n >>> 12) & 63], i + 1 < out.length ? tc[(n >>> 6) & 63] : 61, i + 2 < out.length ? tc[n & 63] : 61)
+    if (buf.length >= 8192) { parts.push(String.fromCharCode.apply(null, buf)); buf = [] }
   }
-  return Image.fromData(Data.fromBase64String(s))
+  if (buf.length) parts.push(String.fromCharCode.apply(null, buf))
+  return Image.fromData(Data.fromBase64String(parts.join("")))
+}
+
+// ---- shared surface helpers (hi-res pass) ----
+const mix3 = (a, c, t) => [a[0] + (c[0] - a[0]) * t, a[1] + (c[1] - a[1]) * t, a[2] + (c[2] - a[2]) * t]
+const adiff = (a, b) => { let d = a - b; d -= Math.round(d / 360) * 360; return d }          // longitude difference, degrees
+const PAD = { earth: 0.17, mars: 0.04, saturn: 1.4 }                                      // extra room around the disc (atmosphere glow, rings)
+function surfN(R, s, kind) { return Math.ceil(2 * R * s * (1 + (PAD[kind] || 0))) + 2 }
+// the height field of a surface tilts the lighting: slopes toward the Sun brighten, slopes away shade (true relief, even at the limb)
+function bumpNdl(ht, N, p, k, x, y, z, rr, str) {
+  if (rr > 0.985 || rr < 1e-4) return x * LIGHT[0] + y * LIGHT[1] + z * LIGHT[2]
+  const hx = (ht[p + 1] - ht[p - 1]) * 0.5 * k * str, hy = (ht[p + N] - ht[p - N]) * 0.5 * k * str
+  const ex = x / rr, ey = y / rr, gr = (hx * ex + hy * ey) * z, gt = -hx * ey + hy * ex
+  const t2x = z * ex, t2y = z * ey, t2z = -rr
+  const nl = (x * LIGHT[0] + y * LIGHT[1] + z * LIGHT[2]) - gt * (-ey * LIGHT[0] + ex * LIGHT[1]) - gr * (t2x * LIGHT[0] + t2y * LIGHT[1] + t2z * LIGHT[2])
+  return nl / Math.sqrt(1 + gt * gt + gr * gr)
+}
+// scattered craters from a jittered 3D grid: each cell may hold one crater (bowl, raised rim, soft ejecta). Returns height in sphere units.
+function craterField(x, y, z, F, off, dens, depth) {
+  const px = x * F + off, py = y * F + off * 0.7, pz = z * F + off * 1.3
+  const ix = Math.floor(px - 0.5), iy = Math.floor(py - 0.5), iz = Math.floor(pz - 0.5)
+  let h = 0
+  for (let dz = 0; dz < 2; dz++) for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) {
+    const cx = ix + dx, cy = iy + dy, cz = iz + dz, q = hash3(cx * 3 + 7, cy * 3 + 1, cz * 3 + 5)
+    if (q > dens) continue
+    const r = 0.14 + 0.34 * Math.pow(q / dens, 1.8)
+    const ox = cx + 0.18 + 0.64 * hash3(cx, cy, cz + 101), oy = cy + 0.18 + 0.64 * hash3(cx + 53, cy, cz), oz = cz + 0.18 + 0.64 * hash3(cx, cy + 71, cz)
+    const d = Math.hypot(px - ox, py - oy, pz - oz) / r
+    if (d > 2.4) continue
+    const dp = depth * r / F
+    h += d < 1 ? -dp * (1 - sstep(0.25, 1, d)) + 0.3 * dp * Math.exp(-Math.pow((d - 1) / 0.2, 2)) : 0.3 * dp * Math.exp(-Math.pow((d - 1) / 0.2, 2)) + 0.05 * dp * Math.exp(-(d - 1) * 1.5)
+  }
+  return h
 }
 
 function moonSurface(R, s, f, face, o, opt) {
@@ -494,8 +533,8 @@ function moonSurface(R, s, f, face, o, opt) {
   const N = Math.ceil(2 * R * s) + 2, c0 = N / 2, k = R * s, NN = N * N
   const G = globe()
   const nx = new Float32Array(NN), ny = new Float32Array(NN), nz = new Float32Array(NN), inside = new Uint8Array(NN)
-  const alb = new Float32Array(NN), rel = new Float32Array(NN), ray = new Float32Array(NN)
-  // 1) albedo on the turning globe: seas with ragged edges, mottling and grain (3D noise, so no seams)
+  const alb = new Float32Array(NN), ht = new Float32Array(NN), ray = new Float32Array(NN), mare = new Float32Array(NN), tn = new Float32Array(NN)
+  // 1) albedo and rough terrain on the turning globe: seas with ragged edges, regolith mottling at pixel scale (3D noise, so no seams)
   for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
     const x = (i + 0.5 - c0) / k, y = (j + 0.5 - c0) / k, r2 = x * x + y * y
     if (r2 > 1.05) continue
@@ -513,36 +552,41 @@ function moonSurface(R, s, f, face, o, opt) {
       if (d < 2) keep *= 1 - m.dep * (1 - sstep(0.15, 1.6, d))
     }
     const mott = fbm3(b[0] * 7 + 3, b[1] * 7 + 5, b[2] * 7, 3)
+    const fine = fbm3(b[0] * 19 + 4, b[1] * 19, b[2] * 19 + 9, 3)
     const m = (1 - keep) * (0.85 + 0.15 * fbm3(b[0] * 4 + 5, b[1] * 4 + 3, b[2] * 4, 2))
-    const high = 0.91 + 0.2 * (mott - 0.5)
-    const mare = 0.55 + 0.16 * (fbm3(b[0] * 5 + 9, b[1] * 5 + 1, b[2] * 5, 2) - 0.5)
-    alb[p] = high + (mare - high) * m + (hash3(Math.floor(b[0] * 260), Math.floor(b[1] * 260), Math.floor(b[2] * 260)) - 0.5) * 0.06
+    const high = 0.9 + 0.22 * (mott - 0.5)
+    const mareA = 0.5 + 0.18 * (fbm3(b[0] * 5 + 9, b[1] * 5 + 1, b[2] * 5, 2) - 0.5)
+    alb[p] = (high + (mareA - high) * m) * (0.9 + 0.2 * fine) + (hash3(Math.floor(b[0] * 300), Math.floor(b[1] * 300), Math.floor(b[2] * 300)) - 0.5) * 0.05
+    mare[p] = m
+    tn[p] = (1 - 2 * m) * 0.7 + 0.6 * (fbm3(b[0] * 3 + 6, b[1] * 3, b[2] * 3 + 2, 2) - 0.5)
+    ht[p] = (fbm3(b[0] * 5.5 + 2, b[1] * 5.5, b[2] * 5.5 + 7, 3) - 0.5) * 0.02 * (1 - 0.8 * m) + (fine - 0.5) * 0.006 * (1 - 0.6 * m)
   }
-  // 2) craters: angular distance on the sphere, so they foreshorten naturally toward the limb
-  const ca = Math.cos(Math.acos(clamp(2 * f - 1, -1, 1))), sa = Math.sin(Math.acos(clamp(2 * f - 1, -1, 1)))
+  // 2) craters on the sphere (angular distance, so they foreshorten toward the limb): bowl, raised rim, ejecta, central peaks, bright rays
   for (const cr of G.craters) {
     const cv = bodyToView(cr.c, o)
-    if (cv[2] < -0.05) continue                                   // on the far side right now
+    if (cv[2] < -0.05) continue
     const e1 = bodyToView(cr.b[0], o), e2 = bodyToView(cr.b[1], o)
-    const box = (ext) => [Math.max(0, Math.floor((cv[0] - ext) * k + c0)), Math.min(N - 1, Math.ceil((cv[0] + ext) * k + c0)),
-      Math.max(0, Math.floor((cv[1] - ext) * k + c0)), Math.min(N - 1, Math.ceil((cv[1] + ext) * k + c0))]
-    const [i0, i1, j0, j1] = box(cr.r * 1.4), cosR = Math.cos(cr.r * 1.35)
+    const box = (ext) => [Math.max(1, Math.floor((cv[0] - ext) * k + c0)), Math.min(N - 2, Math.ceil((cv[0] + ext) * k + c0)),
+      Math.max(1, Math.floor((cv[1] - ext) * k + c0)), Math.min(N - 2, Math.ceil((cv[1] + ext) * k + c0))]
+    const reach = cr.r * 2.3, [i0, i1, j0, j1] = box(reach), cosR = Math.cos(reach)
+    const D = cr.r * (cr.r > 0.05 ? 0.2 : 0.3), big = cr.r > 0.045
     for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
       const p = j * N + i
       if (!inside[p]) continue
       const cd = nx[p] * cv[0] + ny[p] * cv[1] + nz[p] * cv[2]
       if (cd < cosR) continue
       const dd = Math.acos(Math.min(1, cd)) / cr.r
-      const tx = nx[p] - cv[0] * cd, ty = ny[p] - cv[1] * cd, tz = nz[p] - cv[2] * cd, tl = Math.hypot(tx, ty, tz) || 1
-      const ul = (tx * LIGHT[0] + ty * LIGHT[1] + tz * LIGHT[2]) / tl                         // + where the slope leans toward the sun
+      const sup = cr.r < 0.035 ? 1 - 0.65 * mare[p] : 1
+      let h
       if (dd < 1) {
-        const wall = sstep(0.3, 1, dd)
-        rel[p] += -0.5 * wall * ul                                 // far inner wall in shadow
-        alb[p] *= 1 - (0.05 + cr.dark) * (1 - wall)
+        h = -D * (1 - sstep(0.22, 1, dd)) + 0.34 * D * Math.exp(-Math.pow((dd - 1) / 0.2, 2))
+        if (big) h += 0.5 * D * Math.exp(-Math.pow(dd / 0.14, 2))                                  // central peak
+        alb[p] *= 1 - (0.05 + cr.dark) * (1 - sstep(0.4, 1, dd)) * sup
       } else {
-        const bump = 1 - sstep(0, 0.35, dd - 1)
-        rel[p] += 0.22 * bump * ul; alb[p] += 0.05 * bump
+        h = 0.34 * D * Math.exp(-Math.pow((dd - 1) / 0.2, 2)) + 0.06 * D * Math.exp(-(dd - 1) * 1.4)
+        alb[p] += (0.05 + (cr.fresh ? 0.08 : 0)) * Math.exp(-(dd - 1) * 2.2) * sup
       }
+      ht[p] += h * sup
       if (cr.rays) alb[p] += 0.22 * cr.rays * (1 - sstep(0.6, 1.3, dd))
     }
     if (cr.rays) {                                                 // ray systems, fixed to the surface
@@ -566,7 +610,7 @@ function moonSurface(R, s, f, face, o, opt) {
       }
     }
   }
-  // 3) lighting (unchanged): soft terminator, Lommel-Seeliger fall-off, gentle limb darkening, warm transition, earthshine
+  // 3) lighting from the bumpy surface: Lommel-Seeliger (a full Moon is flat, no limb darkening), rugged terminator, warm band at the terminator, earthshine
   const F = rgb(face), WARM = rgb("#D6A468"), DARK = [4, 4, 7], ES = rgb("#9AA6BE")
   const es = 0.085 * (0.5 + 0.5 * (1 - f))
   const px = new Uint8Array(NN * 4)
@@ -575,19 +619,19 @@ function moonSurface(R, s, f, face, o, opt) {
     const edge = clamp((1 - rr) * k + 0.5, 0, 1)
     if (edge <= 0) continue
     const z = Math.sqrt(Math.max(0, 1 - rr * rr)), p = j * N + i
-    const ndl = x * LIGHT[0] + y * LIGHT[1] + z * LIGHT[2]
-    const term = sstep(-0.04, 0.1, ndl)
-    const ls = ndl > 0 ? (2 * ndl) / (ndl + z + 1e-4) : 0
-    const relief = 1 + rel[p] * (0.25 + 1.1 * (1 - clamp(ndl, 0, 1)))
-    let v = term * (0.22 + 0.78 * clamp(ls, 0, 1.15)) * (0.8 + 0.2 * Math.sqrt(z)) * alb[p] * relief
-    v += ray[p] * 0.15 * term * Math.pow(clamp(ndl, 0, 1), 0.7)
+    const ndl = bumpNdl(ht, N, p, k, x, y, z, rr, 0.8)
+    const term = sstep(-0.03, 0.09, ndl)
+    const nl = Math.max(ndl, 0), ls = (2 * nl) / (nl + z + 1e-3)
+    let v = term * (0.1 + 0.9 * clamp(ls, 0, 1.15)) * alb[p]
+    v += ray[p] * 0.15 * term * Math.pow(clamp(nl, 0, 1), 0.7)
     let um = 0, pe = 0
     if (ECL) { const d = Math.hypot(x - ECL.toAnti[0], y - ECL.toAnti[1]); um = 1 - sstep(2.5, 2.9, d); pe = 1 - sstep(2.9, 5.2, d); v *= (1 - 0.94 * um) * (1 - 0.3 * pe) }
     v = clamp(v, 0, 1.12)
-    const warm = 0.4 * term * Math.exp(-Math.max(0, ndl) / 0.1)
+    const warm = 0.4 * term * Math.exp(-Math.max(0, x * LIGHT[0] + y * LIGHT[1] + z * LIGHT[2]) / 0.1)
     const e = es * (1 - term) * alb[p] * (0.75 + 0.25 * z)
+    const t = tn[p], tint = [1 + 0.03 * t, 1 - 0.002 * t, 1 - 0.045 * t]               // highlands a little warm, seas a little cool
     for (let ch = 0; ch < 3; ch++) {
-      const lit = F[ch] + (WARM[ch] - F[ch]) * warm
+      const lit = (F[ch] + (WARM[ch] - F[ch]) * warm) * tint[ch]
       px[p * 4 + ch] = clamp(Math.round(DARK[ch] + (lit * 1.03 - DARK[ch]) * Math.pow(v, 0.92) + ES[ch] * e + [150, 52, 22][ch] * um * (0.55 + 0.45 * alb[p]) * 0.4), 0, 255)
     }
     px[p * 4 + 3] = Math.round(255 * edge * (0.94 + 0.06 * term))
@@ -684,74 +728,421 @@ function earthMap() {                                                         //
 }
 const EARTH_RLE = "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"
 const RIM = { pluto: "#FFD9B8", earth: "#9CC8FF", venus: "#FFE9B0", uranus: "#BFF3F5", neptune: "#7FA0FF", jupiter: "#FFE6C0", saturn: "#FFE9B8", mars: "#FFB27A" }
+// ---- colour tables over latitude (degrees north, then r g b): belts and zones ----
+function tableAt(T, lat) {
+  if (lat <= T[0][0]) return [T[0][1], T[0][2], T[0][3]]
+  const n = T.length
+  if (lat >= T[n - 1][0]) return [T[n - 1][1], T[n - 1][2], T[n - 1][3]]
+  let i = 1
+  while (i < n - 1 && T[i][0] < lat) i++
+  const a = T[i - 1], b = T[i], t = sstep(0, 1, (lat - a[0]) / (b[0] - a[0]))
+  return [a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t, a[3] + (b[3] - a[3]) * t]
+}
+const JUP = [[-90, 118, 108, 100], [-66, 138, 124, 110], [-58, 172, 152, 128], [-50, 214, 198, 172], [-44, 192, 168, 136], [-38, 218, 203, 177], [-33, 166, 132, 102], [-29, 184, 152, 120],
+  [-25, 228, 212, 184], [-20, 206, 170, 134], [-16, 164, 108, 78], [-12, 148, 96, 70], [-8, 170, 120, 88], [-4, 230, 210, 170], [0, 240, 222, 186], [4, 232, 210, 170], [8, 168, 116, 84],
+  [12, 146, 94, 66], [16, 172, 122, 88], [20, 232, 214, 184], [24, 214, 186, 152], [28, 170, 138, 108], [34, 226, 208, 180], [40, 176, 146, 114], [46, 214, 196, 168], [54, 182, 160, 134],
+  [66, 142, 128, 114], [90, 120, 110, 102]]
+const SAT = [[-90, 128, 136, 148], [-78, 150, 148, 140], [-65, 176, 158, 120], [-58, 196, 174, 126], [-50, 210, 186, 138], [-42, 190, 166, 120], [-35, 216, 194, 146], [-26, 224, 202, 154],
+  [-18, 208, 182, 132], [-10, 226, 204, 154], [-3, 240, 220, 170], [5, 232, 210, 160], [14, 212, 186, 134], [22, 226, 204, 154], [32, 208, 182, 130], [41, 216, 194, 146], [52, 198, 174, 126],
+  [64, 176, 156, 120], [75, 158, 150, 136], [90, 130, 138, 150]]
+function ovalW(lat, lon, lon0, lat0, rl, rb, n) {                              // soft oval storm, size in degrees of latitude
+  const u = adiff(lon, lon0) * Math.cos(lat0 * d2r) / rl, v = (lat - lat0) / rb
+  return 1 - sstep(0.45, 1.05, (u * u + v * v) * (1 + 0.4 * n))
+}
+const JOVALS = [[-135, 13.6, 5.5, 2.1, [108, 64, 46], 0.75], [38, 14.2, 6.5, 2.3, [112, 68, 48], 0.7], [-60, 8.4, 3, 1.4, [246, 242, 234], 0.7],
+  [95, -33, 3.8, 2.5, [244, 240, 232], 0.9], [120, -33, 3.3, 2.3, [244, 240, 232], 0.9], [146, -33, 3.1, 2.1, [242, 238, 228], 0.85], [-75, -33, 4.4, 3.1, [214, 144, 108], 0.85],
+  [165, 20, 3, 1.6, [250, 246, 238], 0.6], [-168, -17, 3.5, 1.6, [96, 58, 42], 0.6]]
+function jupiterColor(b) {
+  const lon = Math.atan2(b[0], b[2]) / d2r, lat = -Math.asin(clamp(b[1], -1, 1)) / d2r, lr = lon * d2r
+  const w1 = fbm3(b[0] * 3 + 5, b[1] * 12, b[2] * 3, 4) - 0.5, w2 = fbm3(b[0] * 8 + 1, b[1] * 30, b[2] * 8, 3) - 0.5
+  const L = lat + w1 * 9 + w2 * 2.6 + Math.sin(lr * 5 + 1) * 0.7 + Math.sin(lr * 11 + 3) * 0.45      // belts wander and ripple in longitude
+  let c = tableAt(JUP, L)
+  const ca = tableAt(JUP, L + 2.4), cb = tableAt(JUP, L - 2.4)
+  const edge = clamp(Math.abs(ca[0] - cb[0]) / 50 + Math.abs(ca[2] - cb[2]) / 60, 0, 1)             // turbulence is strongest where belts meet zones
+  const eddy = fbm3(b[0] * 14 + 8, b[1] * 20, b[2] * 14, 3) - 0.5, eddy2 = vnoise3(b[0] * 30 + 2, b[1] * 44, b[2] * 30) - 0.5
+  const stri = vnoise3(b[0] * 4, b[1] * 95, b[2] * 4) - 0.5
+  const gain = 1 + eddy * (0.1 + 0.55 * edge) + eddy2 * 0.1 * edge + stri * 0.09
+  c = [c[0] * gain, c[1] * gain, c[2] * gain]
+  const fe = Math.exp(-Math.pow((lat - 6.6 - w1 * 4) / 2.4, 2)) * Math.pow(Math.max(0, Math.sin(lr * 15 + (lat - 6) * 0.45 + w2 * 3)), 2)   // festoons: dark plumes on the equatorial zone
+  c = mix3(c, [92, 94, 108], clamp(fe * 0.6, 0, 0.6))
+  const nn = fbm3(b[0] * 10 + 3, b[1] * 10, b[2] * 10, 2) - 0.5
+  for (const [lo0, la0, rl, rb, col, st] of JOVALS) { const w = ovalW(lat, lon, lo0, la0, rl, rb, nn); if (w > 0) c = mix3(c, col, w * st) }
+  const gu = adiff(lon, 0) * Math.cos(22 * d2r) / 10, gv = (lat + 22) / 6.6
+  const gr = Math.sqrt(gu * gu + gv * gv) * (1 + 0.22 * nn)                                       // the Great Red Spot, with its pale collar and a dark wake
+  if (gr < 2) {
+    const ang = Math.atan2(gv, gu), sw = 0.5 + 0.5 * Math.sin(ang * 2 + gr * 7 + nn * 6)
+    const core = mix3([184, 80, 54], [216, 128, 92], sw * 0.65 + 0.35 * sstep(0.3, 0.9, gr))
+    c = mix3(c, [240, 226, 202], sstep(0.95, 1.12, gr) * (1 - sstep(1.2, 1.8, gr)) * 0.55)
+    c = mix3(c, core, (1 - sstep(0.84, 1.03, gr)) * 0.94)
+  }
+  const wk = sstep(-4.5, -1.3, gu) * (1 - sstep(-1.5, -1.1, gu)) * Math.exp(-gv * gv * 0.7)
+  if (wk > 0.01) c = mix3(c, [142, 100, 76], clamp(wk * (0.2 + 1.2 * (nn + 0.3)), 0, 0.5))
+  return [c[0], c[1], c[2], 0]
+}
+function saturnColor(b) {
+  const lat = -Math.asin(clamp(b[1], -1, 1)) / d2r, lon = Math.atan2(b[0], b[2])
+  const L = lat + (fbm3(b[0] * 2 + 9, b[1] * 10, b[2] * 2, 3) - 0.5) * 3
+  let c = tableAt(SAT, L)
+  const g = 1 + (vnoise3(b[0] * 3, b[1] * 70, b[2] * 3) - 0.5) * 0.11 + (vnoise3(b[0] * 2, b[1] * 31 + 5, b[2] * 2) - 0.5) * 0.14 + (fbm3(b[0] * 12 + 4, b[1] * 18, b[2] * 12, 3) - 0.5) * 0.12
+  c = [c[0] * g, c[1] * g, c[2] * g]
+  const hx = sstep(0, 1, 1 - Math.abs(lat - (77 + 1.4 * Math.cos(6 * lon))) / 1.6)             // hint of the north-polar hexagon
+  c = mix3(c, [138, 140, 150], hx * 0.35)
+  return [c[0], c[1], c[2], 0]
+}
+const MARS_DARK = [[69, 9, 15, 20, 1.0], [0, -3, 18, 7, 0.65], [-25, 50, 36, 11, 0.7], [-38, -22, 22, 10, 0.75], [-90, -27, 10, 8, 0.9], [-148, -32, 30, 7, 0.8],
+  [148, -32, 28, 7, 0.8], [104, -15, 18, 8, 0.7], [60, 35, 12, 5, 0.55], [150, 8, 24, 6, 0.45], [10, -35, 16, 6, 0.5], [-5, 12, 10, 6, 0.4]]
+const MARS_BRIGHT = [[70, -42, 15, 11, 0.9], [-43, -50, 10, 8, 0.85], [15, 24, 22, 15, 0.5], [-112, 4, 24, 14, 0.4], [150, 28, 14, 10, 0.4]]
+function marsColor(b) {
+  const lon = Math.atan2(b[0], b[2]) / d2r, lat = -Math.asin(clamp(b[1], -1, 1)) / d2r, cl = Math.cos(lat * d2r)
+  const warp = fbm3(b[0] * 4 + 2, b[1] * 4, b[2] * 4 + 5, 3) - 0.5, rag = fbm3(b[0] * 12 + 6, b[1] * 12, b[2] * 12, 3)
+  const base = fbm3(b[0] * 2.2 + 7, b[1] * 2.2, b[2] * 2.2, 4)
+  let c = mix3([192, 112, 66], [226, 152, 98], sstep(0.35, 0.65, base))
+  let ht = 0, dk = 0, br = 0
+  for (const [lo0, la0, rl, rb, st] of MARS_DARK) {
+    const u = adiff(lon + warp * 22, lo0) * Math.cos(la0 * d2r) / rl, v = (lat + warp * 12 - la0) / rb
+    if (u > 2.4 || u < -2.4) continue
+    const w = st * (1 - sstep(0.4, 1.2, u * u + v * v))
+    if (w > dk) dk = w
+  }
+  for (const [lo0, la0, rl, rb, st] of MARS_BRIGHT) {
+    const u = adiff(lon + warp * 14, lo0) * Math.cos(la0 * d2r) / rl, v = (lat + warp * 8 - la0) / rb
+    if (u > 2.4 || u < -2.4) continue
+    const w = st * (1 - sstep(0.35, 1.1, u * u + v * v))
+    if (w > br) br = w
+  }
+  { const mid = fbm3(b[0] * 22 + 2, b[1] * 22, b[2] * 22 + 7, 3), wn = dk + (rag - 0.5) * 1.5 + (mid - 0.5) * 0.9
+    dk = clamp(sstep(0.12, 0.75, wn) * 0.8 + sstep(0.02, 0.4, dk) * 0.2, 0, 1) * (0.6 + 0.6 * rag) }
+  { const st = fbm3(b[0] * 3 + 5, b[1] * 14, b[2] * 3 + 1, 4); c = mix3(c, [150, 84, 52], 0.22 * sstep(0.5, 0.8, st)); c = mix3(c, [232, 170, 118], 0.2 * sstep(0.45, 0.75, 1 - st)) }
+  c = mix3(c, [236, 176, 128], br * 0.5)
+  c = mix3(c, mix3([86, 58, 50], [112, 78, 66], rag), clamp(dk * 0.8, 0, 0.8))
+  const vm = Math.exp(-Math.pow((lat + 11 + 1.6 * Math.sin(lon * 0.09)) / 2.1, 2)) * (1 - sstep(24, 30, Math.abs(lon + 62)))   // Valles Marineris
+  c = mix3(c, [82, 48, 38], vm * 0.62); ht -= 0.012 * vm
+  for (const [lo0, la0] of [[-134, 18], [-120.5, -9], [-112.8, 1], [-104.5, 11]]) {                    // volcano summits, with a little orographic cloud
+    const u = adiff(lon, lo0) * Math.cos(la0 * d2r), v = lat - la0, d = u * u + v * v
+    if (d < 20) { c = mix3(c, [244, 232, 218], 0.5 * (1 - sstep(1.5, 4.2, Math.sqrt(d)))); ht += 0.012 * (1 - sstep(0, 3, Math.sqrt(d))) }
+  }
+  const gr = fbm3(b[0] * 24 + 1, b[1] * 24, b[2] * 24 + 5, 2), g = 0.93 + 0.14 * gr
+  c = [c[0] * g, c[1] * g, c[2] * g]
+  ht += (fbm3(b[0] * 6 + 3, b[1] * 6, b[2] * 6, 3) - 0.5) * 0.02 + craterField(b[0], b[1], b[2], 17, 3, 0.4, 0.3) + craterField(b[0], b[1], b[2], 7, 9, 0.18, 0.25)
+  const nCap = 79 + 3 * (rag - 0.5) * 3, sCap = -75 - 4 * (rag - 0.5) * 3
+  const cap = Math.max(sstep(nCap - 1.2, nCap + 1.2, lat), sstep(-sCap - 1.5, -sCap + 1.5, -lat))
+  const collar = Math.max(sstep(nCap - 7, nCap - 1, lat) * (1 - sstep(nCap - 1, nCap + 1, lat)), sstep(-sCap - 8, -sCap - 1.5, -lat) * (1 - sstep(-sCap - 1.5, -sCap + 1.5, -lat)))
+  c = mix3(c, [118, 76, 62], collar * 0.45)
+  c = mix3(c, [238, 240, 244], cap * 0.95)
+  return [c[0], c[1], c[2], ht]
+}
+function plutoColor(b) {
+  const lon = Math.atan2(b[0], b[2]) / d2r, lat = -Math.asin(clamp(b[1], -1, 1)) / d2r
+  const nL = fbm3(b[0] * 3 + 4, b[1] * 3, b[2] * 3, 4), nM = fbm3(b[0] * 9 + 1, b[1] * 9, b[2] * 9, 3), nF = vnoise3(b[0] * 26 + 3, b[1] * 26, b[2] * 26)
+  const wl = (fbm3(b[0] * 5 + 8, b[1] * 5, b[2] * 5, 2) - 0.5) * 12, wb = (fbm3(b[0] * 5, b[1] * 5 + 8, b[2] * 5, 2) - 0.5) * 12
+  let c = mix3([150, 112, 86], [198, 170, 142], sstep(0.3, 0.7, nL))
+  const eq = 1 - sstep(10, 30, Math.abs(lat) + (nL - 0.5) * 22)
+  c = mix3(c, [96, 54, 40], eq * 0.5 * (0.45 + nM))
+  const ct = ovalW(lat + wb * 0.5, lon + wl * 0.5, 122, -6, 34, 16, nM - 0.5)                              // dark red Cthulhu Macula
+  c = mix3(c, [64, 32, 26], ct * 0.9)
+  c = mix3(c, [128, 80, 60], sstep(52, 72, lat) * 0.55)                                                 // dark polar cap in the north
+  const la = lat + wb, lo = lon + wl
+  const west = Math.max(ovalW(la, lo, 172, 24, 20, 25, nM - 0.5), ovalW(la, lo, 186, 0, 11, 15, nM - 0.5) * 0.9)  // Sputnik Planitia, the left lobe of the heart
+  const east = ovalW(la, lo, 209, 27, 17, 19, nM - 0.5)                                                  // the Tombaugh Regio highlands, the right lobe
+  c = mix3(c, [226, 210, 186], east * 0.88)
+  c = mix3(c, [246, 238, 226], west * 0.96)
+  const g = 0.93 + 0.12 * nF + 0.08 * (nM - 0.5)
+  const ht = (fbm3(b[0] * 7 + 5, b[1] * 7, b[2] * 7, 3) - 0.5) * 0.018 * (1 - west) + craterField(b[0], b[1], b[2], 12, 5, 0.3, 0.3) * (1 - west) + craterField(b[0], b[1], b[2], 28, 2, 0.2, 0.25) * (1 - west)
+  return [c[0] * g, c[1] * g, c[2] * g, ht]
+}
+const LAW = { mars: { e: [0.78, 0.8, 0.82], bump: 1.1, rim: 0.28 }, pluto: { e: [0.7, 0.7, 0.72], bump: 1.2, rim: 0.12 }, jupiter: { e: [0.5, 0.62, 0.8], bump: 0, rim: 0.12 } }
 function planetSurface(R, s, f, kind, o) {
-  const N = Math.ceil(2 * R * s) + 2, c0 = N / 2, k = R * s
-  const px = new Uint8Array(N * N * 4)
-  const th = Math.acos(clamp(2 * f - 1, -1, 1)), ca = Math.cos(th), sa = Math.sin(th)
-  const rimc = rgb(RIM[kind] || "#FFFFFF"), DARK = [4, 4, 8]
+  if (kind === "earth") return earthSurface(R, s, f, o)
+  if (kind === "saturn") return saturnSurface(R, s, f, o)
+  const N = surfN(R, s, kind), c0 = N / 2, k = R * s, NN = N * N
+  const law = LAW[kind] || { e: [0.5, 0.5, 0.5], bump: 0, rim: 0.3 }
+  const cr = new Float32Array(NN), cg = new Float32Array(NN), cb = new Float32Array(NN), ht = new Float32Array(NN), inside = new Uint8Array(NN)
   for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
-    const x = (i + 0.5 - c0) / k, y = (j + 0.5 - c0) / k, rr = Math.sqrt(x * x + y * y)
+    const x = (i + 0.5 - c0) / k, y = (j + 0.5 - c0) / k, rr2 = x * x + y * y
+    if (rr2 > 1.06) continue
+    const p = j * N + i, z = Math.sqrt(Math.max(0, 1 - rr2)), bb = viewToBody([x, y, z], o)
+    const c = kind === "jupiter" ? jupiterColor(bb) : kind === "mars" ? marsColor(bb) : kind === "pluto" ? plutoColor(bb) : planetColor(kind, bb)
+    cr[p] = c[0]; cg[p] = c[1]; cb[p] = c[2]; ht[p] = c[3] || 0; inside[p] = 1
+  }
+  const rimc = rgb(RIM[kind] || "#FFFFFF"), DARK = [4, 4, 8], px = new Uint8Array(NN * 4)
+  const pad = PAD[kind] || 0
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const x = (i + 0.5 - c0) / k, y = (j + 0.5 - c0) / k, rr = Math.sqrt(x * x + y * y), p = j * N + i
     const edge = clamp((1 - rr) * k + 0.5, 0, 1)
-    if (edge <= 0) continue
-    const z = Math.sqrt(Math.max(0, 1 - rr * rr)), p = (j * N + i) * 4
-    const bb = viewToBody([x, y, z], o), alb = planetColor(kind, bb)
-    const ndl = x * LIGHT[0] + y * LIGHT[1] + z * LIGHT[2]
-    const term = sstep(-0.12, 0.3, ndl)
-    const v = term * (0.22 + 0.78 * Math.pow(clamp(ndl, 0, 1), 0.5)) * (0.74 + 0.26 * Math.sqrt(z))
-    const rim = Math.pow(1 - z, 3) * 0.3 * term
-    let shade = 1
-    if (kind === "saturn") { const dy = REAL && EFFECTS ? (bb[1] - 1.5 * Math.tan(AXIS.sunLat) - 0.0) / 0.07 : (bb[1] - 0.2) / 0.07; shade = 1 - 0.55 * Math.exp(-dy * dy) }   // the rings' shadow on the globe
-    for (let ch = 0; ch < 3; ch++)
-      px[p + ch] = clamp(Math.round(DARK[ch] + (alb[ch] - DARK[ch]) * (0.035 + 0.965 * v) * shade + rimc[ch] * rim), 0, 255)
-    if (kind === "earth" && EFFECTS) {                    // night side: city lights and aurora
-      const night = 1 - term, la = -Math.asin(clamp(bb[1], -1, 1)) * 180 / Math.PI, lo = 103.82 + Math.atan2(bb[0], bb[2]) * 180 / Math.PI
-      if (night > 0.2) {
-        const m = earthMap(), col = ((Math.floor(lo + 180) % 360) + 360) % 360, cls = m[clamp(Math.floor(90 - la), 0, 179) * 360 + col]
-        const dens = fbm3(bb[0] * 12 + 1, bb[1] * 12, bb[2] * 12, 3), city = (cls === 1 ? 1 : cls === 2 ? 0.35 : 0) * sstep(0.5, 0.66, dens) * (1 - sstep(55, 68, Math.abs(la)))
-        const sdx = bb[0], sdy = bb[1] + Math.sin(OBS.lat), sdz = bb[2] - Math.cos(OBS.lat), sg = Math.exp(-(sdx * sdx + sdy * sdy + sdz * sdz) / (0.05 * 0.05)) * (z > 0.2 ? 1 : 0)
-        const L = clamp(city * 0.85 + sg * 1.4, 0, 1.4) * night * night
-        px[p] = clamp(px[p] + 255 * L, 0, 255); px[p + 1] = clamp(px[p + 1] + 200 * L, 0, 255); px[p + 2] = clamp(px[p + 2] + 110 * L, 0, 255)
-        const al = Math.exp(-Math.pow((Math.abs(la) - 67) / 4.5, 2)) * (0.45 + fbm3(bb[0] * 6 + 3, bb[1] * 20, bb[2] * 6, 3)) * night * night * 0.9
-        const pu = fbm3(bb[0] * 3 + 8, bb[1] * 9, bb[2] * 3, 2)
-        px[p] = clamp(px[p] + (60 + 110 * pu) * al, 0, 255); px[p + 1] = clamp(px[p + 1] + (255 - 100 * pu) * al, 0, 255); px[p + 2] = clamp(px[p + 2] + (140 + 100 * pu) * al, 0, 255)
+    if (edge <= 0) {
+      if (kind === "mars" && rr < 1 + pad) {                                    // a thin blush of dusty air above the limb
+        const el = clamp((x * LIGHT[0] + y * LIGHT[1]) / rr + 0.5 * Math.max(0, LIGHT[2]), -1, 1), a = Math.exp(-(rr - 1) / 0.012) * 0.4 * sstep(-0.4, 0.5, el)
+        px[p * 4] = 214; px[p * 4 + 1] = 168; px[p * 4 + 2] = 150; px[p * 4 + 3] = Math.round(255 * a)
       }
+      continue
     }
-    px[p + 3] = Math.round(255 * edge)
+    const z = Math.sqrt(Math.max(0, 1 - rr * rr))
+    const ndl = law.bump ? bumpNdl(ht, N, p, k, x, y, z, rr, law.bump) : x * LIGHT[0] + y * LIGHT[1] + z * LIGHT[2]
+    const lit = sstep(-0.1, 0.32, ndl), gnd = clamp(ndl + 0.03, 0, 1)
+    const geo = x * LIGHT[0] + y * LIGHT[1] + z * LIGHT[2], term = sstep(-0.12, 0.3, geo)
+    const rim = Math.pow(1 - z, 3) * law.rim * term
+    const alb = [cr[p], cg[p], cb[p]]
+    for (let ch = 0; ch < 3; ch++) {
+      const v = lit * Math.pow(gnd, law.e[ch]) * (law.bump ? 1 : 0.74 + 0.26 * Math.sqrt(z))
+      px[p * 4 + ch] = clamp(Math.round(DARK[ch] + (alb[ch] - DARK[ch]) * (0.035 + 0.965 * v) + rimc[ch] * rim), 0, 255)
+    }
+    px[p * 4 + 3] = Math.round(255 * edge)
   }
   return { img: pngFromRGBA(px, N, N), size: N / s }
 }
-// Saturn's rings: back half is drawn before the planet, front half after it
-function saturnRings(ctx, cx, cy, R, front) {
-  const flat = REAL ? Math.max(0.03, Math.abs(Math.sin(AXIS.lat))) : 0.27, n = 44
-  const ch = REAL ? AXIS.roll : 0, mj = [Math.cos(ch), Math.sin(ch)], ax = [Math.sin(ch), -Math.cos(ch)], sg = AXIS.lat >= 0 || !REAL ? -1 : 1, mn = [ax[0] * sg, ax[1] * sg]
-  const rings = [[1.28, 0.16, 1.1], [1.4, 0.34, 1.3], [1.52, 0.42, 1.5], [1.64, 0.3, 1.3], [1.8, 0.07, 0.8],
-    [1.92, 0.34, 1.4], [2.04, 0.28, 1.2], [2.16, 0.12, 0.8]]
-  for (const [rk, a, w] of rings) {
-    const A = R * rk, B = A * flat
-    const t0 = front ? 0 : Math.PI, t1 = front ? Math.PI : 2 * Math.PI
-    const path = new Path()
-    for (let i = 0; i <= n; i++) {
-      const t = t0 + (t1 - t0) * i / n, pt = new Point(cx + A * Math.cos(t) * mj[0] + B * Math.sin(t) * mn[0], cy + A * Math.cos(t) * mj[1] + B * Math.sin(t) * mn[1])
-      if (i === 0) path.move(pt); else path.addLine(pt)
-    }
-    ctx.addPath(path); ctx.setStrokeColor(col(rk > 1.75 ? "#CDB98F" : "#E2CF9F", a * (front ? 1 : 0.8))); ctx.setLineWidth(w * R / 27)
-    ctx.strokePath()
+
+// ---- Earth: real continents with coast detail and shelves, biomes, clouds with cyclones, sun glint, atmosphere, city lights, aurora ----
+const CITIES = [[139.7, 35.7, 1, 3.2], [126.9, 37.5, 0.8, 2.2], [121.5, 31.2, 0.95, 3.2], [116.4, 39.9, 0.8, 3], [113.3, 23.1, 1, 3.2], [114.1, 22.3, 0.6, 1.2], [121.5, 25, 0.6, 1.5], [77.2, 28.6, 0.9, 3],
+  [72.8, 19.1, 0.8, 2], [88.4, 22.6, 0.6, 2.2], [90.4, 23.8, 0.7, 1.8], [106.8, -6.2, 0.9, 2.5], [112.7, -7.3, 0.4, 1.8], [103.8, 1.35, 0.9, 1], [100.5, 13.8, 0.6, 1.8], [121, 14.6, 0.7, 1.8],
+  [105.8, 21, 0.4, 1.3], [106.7, 10.8, 0.5, 1.5], [151.2, -33.9, 0.6, 1.5], [145, -37.8, 0.4, 1.3], [31.2, 30, 0.8, 2], [3.4, 6.5, 0.7, 1.6], [28, -26.2, 0.5, 1.6], [29, 41, 0.6, 1.6],
+  [37.6, 55.7, 0.7, 2.4], [-0.1, 51.5, 0.9, 2.6], [2.3, 48.9, 0.8, 2], [7, 51.3, 0.8, 2.6], [-3.7, 40.4, 0.5, 1.6], [12.5, 41.9, 0.5, 1.6], [9.2, 45.5, 0.6, 2], [-74, 40.7, 1, 3.4],
+  [-87.6, 41.9, 0.7, 2.4], [-118.2, 34, 0.8, 2.6], [-77, 38.9, 0.6, 2], [-122.3, 37.6, 0.5, 1.8], [-95.4, 29.8, 0.5, 1.8], [-99.1, 19.4, 0.7, 2], [-46.6, -23.5, 0.9, 2.8],
+  [-58.4, -34.6, 0.7, 2.2], [-43.2, -22.9, 0.5, 1.8], [-77, -12, 0.5, 1.6], [-74.1, 4.7, 0.5, 1.6], [51.4, 35.7, 0.6, 1.8], [46.7, 24.7, 0.5, 1.5], [67, 24.9, 0.6, 1.8], [74.3, 31.5, 0.6, 2],
+  [36.8, -1.3, 0.3, 1.3], [-0.2, 5.6, 0.3, 1.2], [135.5, 34.7, 0.8, 2], [127, 37, 0.3, 4]]
+const CYCLONES = [[128, 16, 7, 1], [-28, 54, 14, 1], [82, -52, 14, -1], [-62, -41, 10, -1]]       // lon, lat, size (deg), spin direction
+function cloudAt(b, la, lo, drift, full) {
+  const cs = Math.cos(drift), sn = Math.sin(drift), cx = b[0] * cs + b[2] * sn, cz = -b[0] * sn + b[2] * cs
+  const w = fbm3(cx * 2.1 + 4, b[1] * 2.1, cz * 2.1, 3)
+  const n = fbm3(cx * 3.3 + w * 1.7, b[1] * 4.4 + w * 1.1, cz * 3.3 + w * 1.7, full ? 5 : 3)
+  const al = Math.abs(la)
+  const th = 0.55 - 0.15 * Math.exp(-Math.pow(la / 9, 2)) - 0.12 * Math.exp(-Math.pow((al - 52) / 11, 2)) + 0.1 * Math.exp(-Math.pow((al - 27) / 9, 2))
+  let c = sstep(th, th + 0.2, n)
+  for (const [lo0, la0, sz, dir] of CYCLONES) {
+    const dl = adiff(lo, lo0) * Math.cos(la0 * d2r), dy = la - la0, d = Math.sqrt(dl * dl + dy * dy) / sz
+    if (d > 2.6) continue
+    const sp = 0.5 + 0.5 * Math.cos(dir * (Math.atan2(dy, dl) * 2 - 3.2 * Math.log(d + 0.12)) + n * 2)
+    const cy = Math.exp(-d * d * 0.55) * (0.35 + 0.65 * sp) * (1 - Math.exp(-d * d * 14))
+    c = Math.max(c, cy * 1.1)
   }
+  if (full) c *= 0.8 + 0.4 * vnoise3(cx * 30 + 7, b[1] * 52, cz * 30)
+  return clamp(c, 0, 1)
+}
+function earthSurface(R, s, f, o) {
+  const N = surfN(R, s, "earth"), c0 = N / 2, k = R * s, NN = N * N, m = earthMap()
+  const sr = new Float32Array(NN), sg = new Float32Array(NN), sb = new Float32Array(NN), om = new Float32Array(NN), cld = new Float32Array(NN), shd = new Float32Array(NN), ht = new Float32Array(NN), inside = new Uint8Array(NN)
+  const Sb = viewToBody(LIGHT, o), drift = Math.floor(now.getTime() / 600000) * 0.0025
+  const lm = (lo, la) => m[clamp(Math.floor(90 - la), 0, 179) * 360 + (((Math.floor(lo + 180) % 360) + 360) % 360)] !== 0 ? 1 : 0
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const x = (i + 0.5 - c0) / k, y = (j + 0.5 - c0) / k, rr2 = x * x + y * y
+    if (rr2 > 1.06) continue
+    const p = j * N + i, z = Math.sqrt(Math.max(0, 1 - rr2)), b = viewToBody([x, y, z], o)
+    const la = -Math.asin(clamp(b[1], -1, 1)) / d2r, lo = 103.82 + Math.atan2(b[0], b[2]) / d2r, al = Math.abs(la)
+    const fx = (((lo + 180) % 360) + 360) % 360 - 0.5, fy = clamp(90 - la - 0.5, 0, 178.999), x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0
+    let wL = 0, wD = 0, wI = 0
+    for (let q = 0; q < 4; q++) {
+      const w = (q & 1 ? tx : 1 - tx) * (q >> 1 ? ty : 1 - ty), cls = m[Math.min(179, y0 + (q >> 1)) * 360 + ((x0 + (q & 1) + 360) % 360)]
+      if (cls === 1) wL += w; else if (cls === 2) wD += w; else if (cls === 3) wI += w
+    }
+    const landW = wL + wD + wI, cn = fbm3(b[0] * 26 + 3, b[1] * 26, b[2] * 26 + 1, 3) - 0.5
+    const land = sstep(0.42, 0.58, landW + cn * 0.42)
+    const mt = fbm3(b[0] * 9 + 2, b[1] * 9, b[2] * 9, 3), mt2 = vnoise3(b[0] * 30, b[1] * 30 + 3, b[2] * 30)
+    let col
+    if (land > 0.01) {
+      let veg = mix3([54, 100, 44], [100, 130, 60], sstep(0.35, 0.7, mt))
+      veg = mix3(veg, [26, 74, 38], 0.75 * clamp(1 - al / 15, 0, 1))
+      veg = mix3(veg, [42, 76, 58], sstep(48, 58, al) * 0.8)
+      veg = mix3(veg, [132, 126, 106], sstep(64, 72, al))
+      const des = mix3([208, 172, 110], [198, 122, 78], sstep(0.4, 0.7, mt))
+      let lc = [(wL * veg[0] + wD * des[0] + wI * 242) / (landW + 1e-3), (wL * veg[1] + wD * des[1] + wI * 246) / (landW + 1e-3), (wL * veg[2] + wD * des[2] + wI * 250) / (landW + 1e-3)]
+      const bl = (lo0, la0, rl, rb) => { const u = adiff(lo, lo0) * Math.cos(la0 * d2r) / rl, v = (la - la0) / rb; return Math.exp(-(u * u + v * v)) }
+      const mtn = clamp(sstep(0.64, 0.84, fbm3(b[0] * 5 + 11, b[1] * 5, b[2] * 5, 3)) * 0.6 + bl(88, 33, 16, 6) + bl(-70, -18, 4.5, 24) * 0.8 + bl(-113, 43, 7, 15) * 0.6, 0, 1)
+      lc = mix3(lc, [158, 140, 118], mtn * 0.55)
+      lc = mix3(lc, [240, 242, 246], sstep(0.74, 0.95, mtn) * 0.7 * (wI > 0.5 ? 0 : 1))
+      const g = 0.92 + 0.16 * mt2
+      col = [lc[0] * g, lc[1] * g, lc[2] * g]
+      ht[p] = land * (0.003 * mt + 0.012 * mtn)
+    } else col = [0, 0, 0]
+    let oc = [0, 0, 0]
+    if (land < 0.99) {
+      const sh = (lm(lo + 2.2, la) + lm(lo - 2.2, la) + lm(lo, la + 2.2) + lm(lo, la - 2.2)) / 4
+      oc = mix3(mix3([7, 30, 84], [16, 62, 132], 0.35 + 0.5 * (fbm3(b[0] * 4 + 1, b[1] * 4, b[2] * 4, 2))), [40, 124, 164], sstep(0, 0.6, sh) * 0.9)
+      const ice = Math.max(sstep(0, 1, (la - 73 - cn * 14) / 3), sstep(0, 1, (-la - 63 - cn * 10) / 3))
+      oc = mix3(oc, [228, 236, 246], ice * 0.95)
+      om[p] = (1 - land) * (1 - ice)
+    }
+    sr[p] = col[0] * land + oc[0] * (1 - land); sg[p] = col[1] * land + oc[1] * (1 - land); sb[p] = col[2] * land + oc[2] * (1 - land)
+    cld[p] = cloudAt(b, la, lo, drift, true)
+    const geo = x * LIGHT[0] + y * LIGHT[1] + z * LIGHT[2]
+    if (geo > 0.05) { const q = norm3([b[0] + 0.03 * Sb[0], b[1] + 0.03 * Sb[1], b[2] + 0.03 * Sb[2]]); shd[p] = cloudAt(q, la, lo, drift, false) }
+    inside[p] = 1
+  }
+  const px = new Uint8Array(NN * 4), nlight = EFFECTS, pad = PAD.earth
+  const HV = norm3([LIGHT[0], LIGHT[1], LIGHT[2] + 1])
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const x = (i + 0.5 - c0) / k, y = (j + 0.5 - c0) / k, rr = Math.sqrt(x * x + y * y), p = j * N + i
+    const edge = clamp((1 - rr) * k + 0.5, 0, 1)
+    if (rr >= 1 + pad) continue
+    let aa = 0, ac = [0, 0, 0]
+    {
+      const el = rr > 1e-4 ? (x * LIGHT[0] + y * LIGHT[1]) / rr : 0, lo = sstep(-0.35, 0.45, el + 0.45 * Math.max(0, LIGHT[2]))
+      const r1 = Math.max(rr, 1), g = Math.exp(-(r1 - 1) / 0.03)
+      aa = g * 0.8 * lo * (1 - edge); ac = mix3([80, 140, 255], [170, 210, 255], Math.exp(-(r1 - 1) / 0.01))
+    }
+    let dc = [0, 0, 0]
+    if (edge > 0) {
+      const z = Math.sqrt(Math.max(0, 1 - rr * rr))
+      const geo = x * LIGHT[0] + y * LIGHT[1] + z * LIGHT[2], ndl = bumpNdl(ht, N, p, k, x, y, z, rr, 0.45)
+      const day = sstep(-0.05, 0.22, geo), lam = Math.pow(clamp(ndl, 0, 1), 0.72)
+      const ca = clamp(cld[p] * 1.08, 0, 0.97), tw = Math.exp(-Math.pow((geo - 0.03) / 0.1, 2))
+      const sh = 1 - 0.5 * shd[p] * (1 - ca)
+      let sl = [sr[p] * (lam * day * sh + 0.012), sg[p] * (lam * day * sh + 0.012), sb[p] * (lam * day * sh + 0.012)]
+      const nh = Math.max(0, x * HV[0] + y * HV[1] + z * HV[2]), oceanM = om[p] * day * (1 - 0.92 * ca)
+      const spec = Math.pow(nh, 90) * 0.55 + Math.pow(nh, 22) * 0.1
+      sl = [sl[0] + 255 * spec * oceanM, sl[1] + 246 * spec * oceanM, sl[2] + 226 * spec * oceanM]
+      const fr = Math.pow(1 - z, 4) * 0.55 * om[p] * day
+      sl = mix3(sl, [118, 168, 238], fr * 0.8)
+      const cl = 0.03 + 0.97 * day * Math.pow(clamp(geo + 0.06, 0, 1.05), 0.6)
+      const cc = [252 * cl * (1 - 0.1 * tw), 252 * cl * (1 - 0.34 * tw), 255 * cl * (1 - 0.58 * tw)]
+      dc = mix3(sl, cc, ca)
+      dc[0] += 14 * ca * (1 - day); dc[1] += 20 * ca * (1 - day); dc[2] += 36 * ca * (1 - day)
+      const ha = Math.pow(1 - z, 2.3) * 0.75 * sstep(-0.3, 0.5, geo)
+      dc = [dc[0] + 60 * ha, dc[1] + 120 * ha, dc[2] + 250 * ha]
+      const night = 1 - day
+      if (nlight && night > 0.2 && z > 0.08) {
+        const bb = viewToBody([x, y, z], o), la = -Math.asin(clamp(bb[1], -1, 1)) / d2r, lo = 103.82 + Math.atan2(bb[0], bb[2]) / d2r
+        const cls = m[clamp(Math.floor(90 - la), 0, 179) * 360 + (((Math.floor(lo + 180) % 360) + 360) % 360)]
+        let L = 0
+        if (om[p] < 0.5 && cls !== 3) {
+          let pop = 0
+          for (const [cx, cy, st, sp] of CITIES) {
+            const dy = la - cy; if (dy > sp * 3.4 || dy < -sp * 3.4) continue
+            const dx = adiff(lo, cx) * Math.cos(cy * d2r), d2 = (dx * dx + dy * dy) / (sp * sp)
+            if (d2 < 11) pop += st * (Math.exp(-d2 * 1.6) * 1.2 + 0.28 * Math.exp(-d2 * 0.25))
+          }
+          const grain = vnoise3(bb[0] * 70 + 1, bb[1] * 70, bb[2] * 70 + 3), cl2 = fbm3(bb[0] * 18 + 1, bb[1] * 18, bb[2] * 18, 2)
+          L = clamp(pop * (0.35 + 1.0 * grain) * (0.6 + 0.8 * cl2), 0, 1.5) * (cls === 2 ? 0.5 : 1) * (1 - sstep(55, 68, Math.abs(la)))
+        }
+        const sdx = bb[0], sdy = bb[1] + Math.sin(OBS.lat), sdz = bb[2] - Math.cos(OBS.lat), sg2 = Math.exp(-(sdx * sdx + sdy * sdy + sdz * sdz) / (0.05 * 0.05)) * (z > 0.2 ? 1 : 0)
+        L = clamp(L + sg2 * 1.4, 0, 1.5) * night * night * (1 - 0.8 * ca)
+        dc = [dc[0] + 255 * L, dc[1] + 190 * L, dc[2] + 100 * L]
+        const au = Math.exp(-Math.pow((Math.abs(la) - 67) / 4.5, 2)) * (0.45 + fbm3(bb[0] * 6 + 3, bb[1] * 20, bb[2] * 6, 3)) * night * night * 0.9
+        const pu = fbm3(bb[0] * 3 + 8, bb[1] * 9, bb[2] * 3, 2)
+        dc = [dc[0] + (60 + 110 * pu) * au, dc[1] + (255 - 100 * pu) * au, dc[2] + (140 + 100 * pu) * au]
+      }
+    }
+    const A = edge + (1 - edge) * aa
+    if (A <= 0.002) continue
+    for (let ch = 0; ch < 3; ch++) px[p * 4 + ch] = clamp(Math.round((dc[ch] * edge + ac[ch] * (1 - edge) * aa) / A), 0, 255)
+    px[p * 4 + 3] = Math.round(255 * A)
+  }
+  return { img: pngFromRGBA(px, N, N), size: N / s }
 }
 
+// ---- Saturn: globe and rings traced together, so the rings pass in front of and behind the planet, throw a shadow on it, and receive its shadow ----
+function ringTau(r, sm) {                                                       // opacity of the rings at r (Saturn radii): C ring, B ring, Cassini Division, A ring, Encke gap
+  if (r < 1.24 || r > 2.27) return 0
+  const fine = sm ? 0.5 : vnoise3(r * 38 + 3, 1.7, 0.4), mid = sm ? 0.5 : vnoise3(r * 13 + 8, 0.5, 5.1)
+  let t
+  if (r < 1.526) t = (0.1 + 0.12 * sstep(1.3, 1.5, r)) * (0.55 + 0.9 * fine)
+  else if (r < 1.95) t = (0.5 + 0.45 * sstep(1.53, 1.72, r) - 0.15 * sstep(1.88, 1.95, r)) * (0.8 + 0.3 * (fine - 0.5) * 2 * 0.6 + 0.3 * (mid - 0.5))
+  else if (r < 2.025) t = 0.05 + 0.07 * fine + 0.35 * Math.exp(-Math.pow((r - 1.99) / 0.008, 2))
+  else { t = (0.62 + 0.22 * (mid - 0.5) + 0.12 * (fine - 0.5)) * (1 - 0.35 * sstep(2.24, 2.27, r)); t *= 1 - 0.92 * Math.exp(-Math.pow((r - 2.214) / 0.012, 2)) }
+  const e = sstep(1.24, 1.27, r) * (1 - sstep(2.262, 2.27, r))
+  return clamp(t, 0, 1) * e
+}
+function ringColor(r, fine) {
+  const g = 0.92 + 0.16 * fine
+  let c = r < 1.526 ? [122, 108, 94] : r < 1.95 ? mix3([214, 188, 144], [238, 214, 168], sstep(1.55, 1.75, r)) : r < 2.025 ? [176, 156, 124] : [206, 186, 150]
+  if (r > 1.45 && r < 1.58) c = mix3(c, mix3([122, 108, 94], [214, 188, 144], sstep(1.45, 1.58, r)), 1)
+  return [c[0] * g, c[1] * g, c[2] * g]
+}
+function saturnSurface(R, s, f, o) {
+  const N = surfN(R, s, "saturn"), c0 = N / 2, k = R * s, NN = N * N, px = new Uint8Array(NN * 4)
+  const Lb = viewToBody(LIGHT, o), dv = viewToBody([0, 0, 1], o), litFace = (dv[1] >= 0) === (Lb[1] >= 0)
+  const DARK = [4, 4, 8], rimc = rgb(RIM.saturn), e = [0.4, 0.45, 0.56]
+  const flat = Math.abs(dv[1]) > 1e-4
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const x = (i + 0.5 - c0) / k, y = (j + 0.5 - c0) / k, rr = Math.sqrt(x * x + y * y), p = j * N + i
+    let pa = clamp((1 - rr) * k + 0.5, 0, 1), pc = [0, 0, 0], z = 0
+    const ob = viewToBody([x, y, 0], o)
+    if (pa > 0) {
+      z = Math.sqrt(Math.max(0, 1 - rr * rr))
+      const bb = [ob[0] + z * dv[0], ob[1] + z * dv[1], ob[2] + z * dv[2]], alb = saturnColor(bb)
+      const geo = x * LIGHT[0] + y * LIGHT[1] + z * LIGHT[2], lit = sstep(-0.1, 0.32, geo), gnd = clamp(geo + 0.03, 0, 1)
+      let shade = 1
+      if (EFFECTS && Math.abs(Lb[1]) > 1e-3) {                                               // the rings' shadow on the globe (4 taps keep the thin shadow line smooth)
+        let sh = 0
+        for (let q = 0; q < 4; q++) {
+          const xx = x + ((q & 1) - 0.5) * 0.9 / k, yy = y + ((q >> 1) - 0.5) * 0.9 / k, zz = Math.sqrt(Math.max(0, 1 - xx * xx - yy * yy)), o2 = viewToBody([xx, yy, 0], o)
+          const b2 = [o2[0] + zz * dv[0], o2[1] + zz * dv[1], o2[2] + zz * dv[2]], u = -b2[1] / Lb[1]
+          if (u > 0) { const tt = ringTau(Math.hypot(b2[0] + u * Lb[0], b2[2] + u * Lb[2]), true); sh += tt }
+        }
+        shade = 1 - 0.7 * sh / 4
+      }
+      const rim = Math.pow(1 - z, 3) * 0.2 * sstep(-0.12, 0.3, geo)
+      for (let ch = 0; ch < 3; ch++) pc[ch] = clamp(DARK[ch] + (alb[ch] - DARK[ch]) * (0.035 + 0.965 * lit * Math.pow(gnd, e[ch]) * (0.78 + 0.22 * Math.sqrt(z))) * shade + rimc[ch] * rim, 0, 255)
+    }
+    let tau = 0, rc = [0, 0, 0]
+    if (flat) {
+      let ta = 0, ra = 0, ga = 0, ba = 0
+      for (let sy = 0; sy < 3; sy++) for (let sx = 0; sx < 3; sx++) {                        // 3x3 samples keep the thin ring edges smooth
+        const ox = (sx - 1) / 3, oy = (sy - 1) / 3, ob2 = viewToBody([x + ox / k, y + oy / k, 0], o)
+        const t = -ob2[1] / dv[1], qx = ob2[0] + t * dv[0], qz = ob2[2] + t * dv[2], rg = Math.hypot(qx, qz)
+        if (rg < 1.24 || rg > 2.27) continue
+        const zz = 1 - (x + ox / k) * (x + ox / k) - (y + oy / k) * (y + oy / k)
+        if (zz > 0 && t < Math.sqrt(zz)) continue                                          // hidden behind the globe
+        let tt = ringTau(rg)
+        if (tt <= 0.003) continue
+        let cc = ringColor(rg, vnoise3(rg * 61, 4.4, 2.2))
+        let br = litFace ? 1 : 0.1 + 0.55 * clamp((1 - tt) * 1.1, 0, 1) * Math.min(1, tt * 3)
+        if (EFFECTS) { const bq = qx * Lb[0] + qz * Lb[2], disc = bq * bq - (qx * qx + qz * qz - 1); if (disc > 0 && -bq - Math.sqrt(disc) > 0) br *= 0.1 + 0.9 * (1 - sstep(0, 0.05, disc)) }   // Saturn's shadow across the rings
+        tt *= 0.97
+        ta += tt; ra += cc[0] * br * tt; ga += cc[1] * br * tt; ba += cc[2] * br * tt
+      }
+      if (ta > 0) { tau = ta / 9; rc = [ra / ta, ga / ta, ba / ta] }
+    }
+    const A = tau + pa * (1 - tau)
+    if (A <= 0.003) continue
+    for (let ch = 0; ch < 3; ch++) px[p * 4 + ch] = clamp(Math.round((rc[ch] * tau + pc[ch] * pa * (1 - tau)) / A), 0, 255)
+    px[p * 4 + 3] = Math.round(255 * A)
+  }
+  return { img: pngFromRGBA(px, N, N), size: N / s }
+}
+
+// ---- Sun: limb darkening that reddens toward the edge, granulation cells, supergranules, bright faculae, sunspot groups with umbra and penumbra ----
+const SUNSPOTS = [[-30, 13, 0.034], [-24, 11, 0.017], [-36, 15, 0.013], [-20, 16, 0.01], [36, -16, 0.024], [41, -14, 0.012], [31, -19, 0.01], [63, 9, 0.02], [67, 11, 0.01]].map(([lo, la, r]) => {
+  const a = lo * d2r, b = la * d2r
+  return { c: [Math.sin(a) * Math.cos(b), -Math.sin(b), Math.cos(a) * Math.cos(b)], r }
+})
 function sunSurface(R, s) {
   const N = Math.ceil(2 * R * s) + 2, c0 = N / 2, k = R * s, px = new Uint8Array(N * N * 4)
+  const W = [[1, 255, 250, 222], [0.72, 255, 232, 150], [0.45, 255, 196, 82], [0.2, 255, 148, 40], [0, 214, 84, 16]]
   for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
     const x = (i + 0.5 - c0) / k, y = (j + 0.5 - c0) / k, rr = Math.sqrt(x * x + y * y)
     const edge = clamp((1 - rr) * k + 0.5, 0, 1)
     if (edge <= 0) continue
     const z = Math.sqrt(Math.max(0, 1 - rr * rr)), p = (j * N + i) * 4
-    const gr = fbm3(x * 9 + 3, y * 9, z * 9, 4), big = fbm3(x * 2.4 + 7, y * 2.4, z * 2.4 + 1, 3)
-    const spot = sstep(0.66, 0.74, fbm3(x * 3.2 + 21, y * 3.2, z * 3.2, 3))
-    const limb = 0.55 + 0.45 * Math.pow(z, 0.6)
-    const t = clamp(0.35 + gr * 0.8 + (big - 0.5) * 0.5 - spot * 0.45, 0, 1)
-    const c = [255, 150 + 105 * t, 40 + 150 * t * t]
-    for (let ch = 0; ch < 3; ch++) px[p + ch] = clamp(Math.round(c[ch] * limb), 0, 255)
+    let q = 1
+    while (q < W.length - 1 && W[q][0] > z) q++
+    const t = clamp((z - W[q][0]) / (W[q - 1][0] - W[q][0]), 0, 1), c = [0, 1, 2].map((ch) => W[q][ch + 1] + (W[q - 1][ch + 1] - W[q][ch + 1]) * t)
+    const ld = 0.62 + 0.5 * Math.pow(z, 0.7)                                                     // limb darkening (bright overall, a touch under at the rim)
+    // granulation: bright cells with dark lanes (jittered 3D cells, foreshortened toward the limb for free)
+    const gx = x * 40 + 5, gy = y * 40 + 2, gz = z * 40 + 9, ix = Math.floor(gx - 0.5), iy = Math.floor(gy - 0.5), iz = Math.floor(gz - 0.5)
+    let d1 = 9, d2 = 9, cb = 0
+    for (let dz = 0; dz < 2; dz++) for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) {
+      const cx = ix + dx, cy = iy + dy, cz = iz + dz
+      const ox = cx + 0.15 + 0.7 * hash3(cx, cy, cz), oy = cy + 0.15 + 0.7 * hash3(cx + 31, cy, cz), oz = cz + 0.15 + 0.7 * hash3(cx, cy + 17, cz)
+      const d = Math.hypot(gx - ox, gy - oy, gz - oz)
+      if (d < d1) { d2 = d1; d1 = d; cb = hash3(cx, cy + 5, cz + 3) } else if (d < d2) d2 = d
+    }
+    const lane = 1 - sstep(0.0, 0.42, d2 - d1), gran = 1 - 0.075 * lane + 0.06 * (cb - 0.5) + 0.03 * (vnoise3(x * 90, y * 90, z * 90 + 4) - 0.5)
+    const sg = fbm3(x * 5.5 + 3, y * 5.5, z * 5.5 + 1, 3), super_ = 0.96 + 0.08 * sg
+    const fac = sstep(0.55, 0.85, fbm3(x * 10 + 9, y * 10, z * 10 + 4, 3)) * sstep(0.5, 0.95, 1 - z) * 0.22
+    let sp = 1, red = 0
+    for (const S of (SHOW_SUNSPOTS ? SUNSPOTS : [])) {
+      const cd = x * S.c[0] + y * S.c[1] + z * S.c[2]
+      if (cd < 0.9) continue
+      const ang = Math.acos(Math.min(1, cd)), pr = S.r * 2.4
+      if (ang > pr) continue
+      const um = 1 - sstep(S.r * 0.7, S.r * 1.05, ang), pe = 1 - sstep(pr * 0.8, pr, ang)
+      const fil = 0.75 + 0.5 * vnoise3(ang * 70, Math.atan2(y - S.c[1], x - S.c[0]) * 3.5, 1.3)
+      const m = 0.12 * um + (1 - um) * (1 - pe * (0.5 + 0.1 * (fil - 1)))
+      if (m < sp) sp = m
+      red = Math.max(red, pe)
+    }
+    const br = ld * gran * super_ * sp + fac * ld
+    const rb = 1 - 0.1 * red
+    px[p] = clamp(Math.round(c[0] * br), 0, 255); px[p + 1] = clamp(Math.round(c[1] * br * rb), 0, 255); px[p + 2] = clamp(Math.round(c[2] * br * rb * rb), 0, 255)
     px[p + 3] = Math.round(255 * edge)
   }
   return { img: pngFromRGBA(px, N, N), size: N / s }
@@ -813,15 +1204,27 @@ function arcPath(cx, cy, R, th, span, h, n) {                                 //
   }
   return path
 }
-function sunFlares(ctx, cx, cy, R) {                                          // prominences: new loops every ~10 minutes
+function sunFlares(ctx, cx, cy, R) {                                          // heat flares: soft glowing loops and plumes rising off the limb (new ones every ~10 minutes), drawn behind the disc
   const r = rng(Math.floor(now.getTime() / 600000) * 7919 + 17), n = 3
-  for (let i = 0; i < n; i++) {
-    const th = r() * Math.PI * 2, span = 0.07 + r() * 0.12, h = 0.1 + r() * 0.22
-    for (const [w, a, hex] of [[7, 0.04, "#FF8A30"], [4, 0.08, "#FF9A3C"], [2, 0.14, "#FFB04F"], [0.9, 0.16, "#FFD08A"]]) {
-      ctx.addPath(arcPath(cx, cy, R * 0.99, th, span, h, 18)); ctx.setStrokeColor(col(hex, a)); ctx.setLineWidth(w * R / 27); ctx.strokePath()
+  for (let i = 0; i < n; i++) {                                                // loops
+    const th = r() * Math.PI * 2, span = 0.12 + r() * 0.1, h = 0.08 + r() * 0.1, m = 40
+    for (let j = 0; j <= m; j++) {
+      const t = j / m, a = th - span + 2 * span * t, rad = R * (1 + h * Math.pow(Math.sin(Math.PI * t), 0.8)) * (0.996 + 0.008 * r())
+      const x = cx + Math.cos(a) * rad, y = cy + Math.sin(a) * rad, w = R * (0.022 + 0.02 * Math.sin(Math.PI * t)) * (0.8 + 0.4 * r())
+      dot(ctx, x, y, w * 4, "#FF6A28", 0.013); dot(ctx, x, y, w * 2.2, "#FF8A38", 0.03); dot(ctx, x, y, w * 1.1, "#FFAA60", 0.05); dot(ctx, x, y, w * 0.5, "#FFD59A", 0.06)
+    }
+  }
+  for (let i = 0; i < 2; i++) {                                                // plumes: a cloud of hot gas drifting out and fading
+    const th = r() * Math.PI * 2, len = R * (0.35 + r() * 0.35), m = 18
+    for (let j = 0; j <= m; j++) {
+      const t = j / m, d = R * 0.98 + len * t, wob = (r() - 0.5) * R * 0.06
+      const x = cx + Math.cos(th) * d - Math.sin(th) * wob, y = cy + Math.sin(th) * d + Math.cos(th) * wob
+      const w = R * (0.1 + 0.16 * t), f = 1 - t
+      dot(ctx, x, y, w * 2.2, "#FF6A28", 0.02 * f); dot(ctx, x, y, w, "#FF9440", 0.045 * f); dot(ctx, x, y, w * 0.45, "#FFC070", 0.06 * f)
     }
   }
 }
+
 function solarEclipse(ctx, cx, cy, R) {
   const g = ECLG; if (!g || g.sepSun > 1.5) return
   const ex = g.toSun[0], ey = g.toSun[1], d = Math.hypot(ex, ey)                  // Moon's disc, relative to the Sun's
@@ -860,12 +1263,17 @@ function bodyLabel(ctx, x, nameY, factY, lineY, align, u) {
   }
 }
 
+function axisOf(kind) {                       // the real viewing angle; Saturn's rings are nearly edge-on in 2025-27, so they are opened to at least RING_MIN_TILT_DEG to stay readable
+  const a = axisFor(kind)
+  if (kind === "saturn" && RING_MIN_TILT_DEG > 0) { const m = RING_MIN_TILT_DEG * d2r; if (Math.abs(a.lat) < m) a.lat = (a.lat < 0 ? -1 : 1) * m }
+  return a
+}
 function drawMoon(ctx, cx, cy, R) {
   const isMoon = BODY.kind === "moon", isSun = BODY.kind === "sun"
   R = R * BODY.scale
   const f = REAL && !isSun ? clamp(BODY.kind === "earth" ? (1 + computeLight("earth", 0.5)[2]) / 2 : realFraction(BODY.kind), 0.02, 1) : isMoon ? 0.04 + 0.96 * progress : 0.55 + 0.45 * progress   // lit fraction: real phase, or crescent → full over the week
   const e = 1 - 2 * f
-  AXIS = axisFor(BODY.kind)
+  AXIS = axisOf(BODY.kind)
   ECL = REAL && EFFECTS ? eclipseGeom() : null
   const lunarEcl = !!ECL && isMoon && ECL.sepAnti < 1.9
   if (!lunarEcl) { const g = ECL; ECL = null; if (g) ECLG = g } else ECLG = ECL
@@ -891,7 +1299,10 @@ function drawMoon(ctx, cx, cy, R) {
   // thin bloom just outside the lit limb
   if (isMoon && !SUN_DIRECTION) fillPath(ctx, litPath(cx, cy, R * 1.03, clamp(e - 0.06, -1, 1)), face, 0.08)
   if (isSun) {                                   // corona: a smooth glow that thins out, with uneven soft streamers (no lines)
-    for (let i = 48; i >= 1; i--) dot(ctx, cx, cy, R * (1 + 1.5 * i / 48), "#FFB347", 0.028 * Math.pow(1 - i / 49, 1.9))
+    for (let i = 48; i >= 1; i--) dot(ctx, cx, cy, R * (1 + 1.9 * i / 48), "#FFB347", 0.075 * Math.pow(1 - i / 49, 1.7))
+    for (let i = 20; i >= 1; i--) dot(ctx, cx, cy, R * (1 + 0.35 * i / 20), "#FFF0C0", 0.09 * Math.pow(1 - i / 21, 1.3))   // hot white-gold inner glow
+    const hz = rng(Math.floor(now.getTime() / 300000) * 17 + 3)            // heat haze: faint warm shimmer drifting just off the limb
+    for (let i = 0; i < 26; i++) { const an = hz() * Math.PI * 2, d = R * (1.05 + hz() * 0.3); dot(ctx, cx + Math.cos(an) * d, cy + Math.sin(an) * d, R * (0.1 + hz() * 0.14), "#FF8A3A", 0.018) }
     const cr = rng(Math.floor(now.getTime() / 1800000) * 31 + 5)
     for (let i = 0; i < 46; i++) {
       const an = cr() * Math.PI * 2, d = R * (1.12 + cr() * 0.55), rr = R * (0.16 + cr() * 0.3)
@@ -899,18 +1310,18 @@ function drawMoon(ctx, cx, cy, R) {
     }
   }
   if (EFFECTS && BODY.kind === "jupiter") { dot(ctx, cx, cy, R * 1.5, "#E3B98A", 0.035); dot(ctx, cx, cy, R * 1.22, "#F0CFA0", 0.06) }
-  if (BODY.kind === "saturn") saturnRings(ctx, cx, cy, R, false)
 
+  if (EFFECTS && isSun) sunFlares(ctx, cx, cy, R)
   let drawn = false
   try {
     // the surface is cached and re-shaded about once an hour, so most refreshes just read a file
-    const sc = Device.screenScale(), N = Math.ceil(2 * R * sc) + 2, size = N / sc
-    AXIS = axisFor(BODY.kind)
+    const sc = Device.screenScale(), N = surfN(R, sc, BODY.kind), size = N / sc
+    AXIS = axisOf(BODY.kind)
     const turn = REAL ? { lon: 0, tilt: AXIS.lat, roll: AXIS.roll } : moonTurn(progress)   // real: tidally locked, only a slow libration               // ~2° of rotation per hourly bucket
     const slot = Math.floor(now.getTime() / 600000)
     const spins = !isMoon && !isSun && BODY.kind !== "mercury" && (REAL || SPIN_STEP_DEG > 0)
     const spin = !spins ? 0 : REAL ? realSpin(BODY.kind) : slot * SPIN_STEP_DEG * Math.PI / 180
-    const key = `v6-${isMoon ? "" : BODY.name + "-"}${N}-${Math.round(((turn.lon / (2 * Math.PI)) % 1) * CYCLE_DAYS * 24)}-${Math.round(progress * CYCLE_DAYS * 24)}${spins ? "-s" + slot : ""}${SUN_DIRECTION && !isSun ? "-t" + slot : ""}${ECL ? "-e" + Math.round(ECL.toAnti[0] * 10) + "_" + Math.round(ECL.toAnti[1] * 10) : ""}${REAL ? "-r" + Math.round(f * 100) + "-a" + Math.round(AXIS.roll * 57) + "_" + Math.round(AXIS.lat * 57) : ""}`
+    const key = `v9-${isMoon ? "" : BODY.name + "-"}${N}-${Math.round(((turn.lon / (2 * Math.PI)) % 1) * CYCLE_DAYS * 24)}-${Math.round(progress * CYCLE_DAYS * 24)}${spins ? "-s" + slot : ""}${SUN_DIRECTION && !isSun ? "-t" + slot : ""}${ECL ? "-e" + Math.round(ECL.toAnti[0] * 10) + "_" + Math.round(ECL.toAnti[1] * 10) : ""}${REAL ? "-r" + Math.round(f * 100) + "-a" + Math.round(AXIS.roll * 57) + "_" + Math.round(AXIS.lat * 57) : ""}`
     const cPath = fm.joinPath(fm.documentsDirectory(), `grok-moon-face-${Math.round(R)}.png`), kPath = cPath + ".key"
     let img = null
     if (fm.fileExists(cPath) && fm.fileExists(kPath) && fm.readString(kPath) === key) img = fm.readImage(cPath)
@@ -935,9 +1346,8 @@ function drawMoon(ctx, cx, cy, R) {
   // hairline rim
   if (!isSun) { ctx.setStrokeColor(col(GOLD, resetDay ? 0.36 : 0.14)); ctx.setLineWidth(0.4); ctx.strokeEllipse(new Rect(cx - R, cy - R, R * 2, R * 2)) }
 
-  if (EFFECTS && isSun) { sunFlares(ctx, cx, cy, R); solarEclipse(ctx, cx, cy, R) }
+  if (EFFECTS && isSun) solarEclipse(ctx, cx, cy, R)
   if (EFFECTS && BODY.kind === "jupiter") jupiterShadows(ctx, cx, cy, R)
-  if (BODY.kind === "saturn") saturnRings(ctx, cx, cy, R, true)
   satellites(ctx, cx, cy, R)
   if (EFFECTS && isSun && lastHour) resetBurst(ctx, cx, cy, R)
   // a burst of twinkles on the orbit when the reset is close (new spots every refresh)
@@ -1058,9 +1468,9 @@ function starPoly(cx, cy, R, r, n, rot) {
 const DAY_STARS = [["#B7CCFF", 1.0, 3.2], ["#E1EAFF", 1.1, 3.6], ["#FFF2CF", 1.2, 4.0], ["#FFD9A0", 1.3, 4.4], ["#FFBF85", 1.45, 4.8], ["#FF8F66", 1.6, 5.4], ["#FFB878", 2.1, 8.5]]
 function dayStar(ctx, x, y, i, state, u) {
   const [base, size] = DAY_STARS[i % DAY_STARS.length], last = i === CYCLE_DAYS - 1
-  const tint = state === "past" ? mixHex(base, "#FF9A55", 0.4) : base          // passed stars cool down to an ember
+  const tint = base                                                              // every star that has been reached keeps its true colour
   const tw = 0.85 + Math.random() * 0.3                                         // twinkle: a little different each refresh
-  const lit = (state === "future" ? (last ? 0.8 : 0.32) : state === "past" ? 0.6 : 1) * tw
+  const lit = (state === "future" ? (last ? 0.8 : 0.32) : state === "past" ? 0.95 : 1) * tw     // reached days are all lit; days to come stay dim
   const k = (state === "now" ? 1.3 : 1) * (last && state === "now" ? 1.25 : 1)
   const R = size * u * 1.25 * k
   const r = rng(i * 977 + 13)
@@ -1084,17 +1494,6 @@ function dayStar(ctx, x, y, i, state, u) {
 }
 function dayDots(ctx, cx, y, gap) {
   const x0 = cx - gap * (CYCLE_DAYS - 1) / 2, u = gap / 7.5
-  const frac = clamp(progress * CYCLE_DAYS - dayIndex, 0, 1)
-  if (dayIndex < CYCLE_DAYS - 1) {                      // a faint trail from today's star toward tomorrow's, with a bright pulse travelling along it
-    const xa = x0 + dayIndex * gap, xp = xa + gap * frac
-    for (let q = 0; q < 10; q++) {
-      const t0 = q / 10, t1 = (q + 1) / 10
-      seg(ctx, xa + (xp - xa) * t0, y, xa + (xp - xa) * t1, y, "#FFE7B0", 0.1 + 0.4 * t1, 0.4)
-    }
-    dot(ctx, xp, y, u * 2.6, "#FFE7B0", 0.1)
-    dot(ctx, xp, y, u * 1.4, "#FFF3D0", 0.35)
-    dot(ctx, xp, y, u * 0.7, "#FFFFFF", 0.95)
-  }
   for (let i = 0; i < CYCLE_DAYS; i++) {
     dayStar(ctx, x0 + i * gap, y, i, i < dayIndex ? "past" : i === dayIndex ? "now" : "future", u)
   }
