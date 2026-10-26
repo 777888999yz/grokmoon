@@ -1,4 +1,4 @@
-// Grok Reset · Moon + planets widget
+// Grok Reset · EARTH + MOON widget: only Earth and the Moon, lit by an off-screen Sun with real geometry. The Moon laps Earth once a week; no drift, no loop.
 // Scriptable · small + medium · "transparent" background cropped from your wallpaper
 //
 // SETUP (one time): long-press the home screen, swipe to an empty page, take a screenshot.
@@ -15,6 +15,9 @@ const CYCLE_DAYS = 7                             // resets repeat every N days
 const LABEL = ""                                 // starlight-shimmer monogram above the countdown
 const STAR_SEED = 2814                           // fixed seed: base stars never move
 
+const MODE = "earthmoon"                         // Earth + Moon only; the Sun is off-screen and only sets the light (MODE "week" brings back the one-body-per-day widget)
+const EARTH_SS = 1.5                             // Earth is shaded at 1.5x the screen resolution (night lights are single pixels); 1 = faster
+const DEBUG_TIMING = false
 const CROP_NUDGE = { x: 0, y: 0 }                // px; fine-tune the background crop if it looks offset
 const PLANETS = true                             // each weekly reset shows the next body: Moon, Mercury, Venus, Mars, Jupiter, Saturn, Uranus, Neptune
 const SHOW_LINE = false                          // the thin titanium line under the countdown
@@ -77,7 +80,8 @@ const BODIES = [
 const SUN = { name: "Sun", kind: "sun", scale: 1.02, hex: "#FFD27A", tint: "#FF9E3A", fact: "5,500 °C · reset hour" }
 // the last hour before a reset shows the Sun instead, with a special glow
 const pick = (n) => n === "Sun" ? SUN : (BODIES.find((x) => x.name === n) || BODIES[0])
-const BODY = FORCE_BODY ? pick(FORCE_BODY) : !PLANETS ? BODIES[0] : lastHour ? SUN : DAILY ? pick(WEEK[dayIndex % WEEK.length]) : BODIES[(((ROTATE_MINUTES > 0 ? Math.floor(now.getTime() / (ROTATE_MINUTES * 60000)) : k) % BODIES.length) + BODIES.length) % BODIES.length]
+const DRIFT_BODY = { name: "Earth", kind: "earth", scale: 1, hex: "#6FA8FF", tint: "#FF9E3A", fact: "" }
+const BODY = MODE === "earthmoon" ? DRIFT_BODY : FORCE_BODY ? pick(FORCE_BODY) : !PLANETS ? BODIES[0] : lastHour ? SUN : DAILY ? pick(WEEK[dayIndex % WEEK.length]) : BODIES[(((ROTATE_MINUTES > 0 ? Math.floor(now.getTime() / (ROTATE_MINUTES * 60000)) : k) % BODIES.length) + BODIES.length) % BODIES.length]
 
 function formatLeft(ms) {
   const mins = Math.max(0, Math.ceil(ms / 60000))
@@ -625,7 +629,14 @@ function moonSurface(R, s, f, face, o, opt) {
     let v = term * (0.1 + 0.9 * clamp(ls, 0, 1.15)) * alb[p]
     v += ray[p] * 0.15 * term * Math.pow(clamp(nl, 0, 1), 0.7)
     let um = 0, pe = 0
-    if (ECL) { const d = Math.hypot(x - ECL.toAnti[0], y - ECL.toAnti[1]); um = 1 - sstep(2.5, 2.9, d); pe = 1 - sstep(2.9, 5.2, d); v *= (1 - 0.94 * um) * (1 - 0.3 * pe) }
+    if (DRIFT_ECL) {                              // Earth's shadow, from the real Sun-Earth-Moon geometry: only where this pixel is behind Earth along the Sun line
+      const E = DRIFT_ECL.E, S = DRIFT_ECL.S, wx = x - E[0], wy = y - E[1], wz = z - E[2], t = wx * S[0] + wy * S[1] + wz * S[2]
+      if (t < 0) {
+        const qx = wx - t * S[0], qy = wy - t * S[1], qz = wz - t * S[2], q = Math.sqrt(qx * qx + qy * qy + qz * qz), ru = DRIFT_ECL.Re * 0.8, back = sstep(0, 0.3 * DRIFT_ECL.Re, -t)
+        um = (1 - sstep(ru * 0.8, ru * 1.08, q)) * back; pe = (1 - sstep(ru, ru * 1.9, q)) * back
+        v *= (1 - 0.94 * um) * (1 - 0.3 * pe)
+      }
+    } else if (ECL) { const d = Math.hypot(x - ECL.toAnti[0], y - ECL.toAnti[1]); um = 1 - sstep(2.5, 2.9, d); pe = 1 - sstep(2.9, 5.2, d); v *= (1 - 0.94 * um) * (1 - 0.3 * pe) }
     v = clamp(v, 0, 1.12)
     const warm = 0.4 * term * Math.exp(-Math.max(0, x * LIGHT[0] + y * LIGHT[1] + z * LIGHT[2]) / 0.1)
     const e = es * (1 - term) * alb[p] * (0.75 + 0.25 * z)
@@ -714,6 +725,8 @@ function planetColor(kind, b) {
   }
   return [200, 200, 200]
 }
+let DRIFT_W = 0, DRIFT_MS = null, DRIFT_ECL = null          // drift mode: warmth 0..1, Moon shadow on Earth, Earth shadow on Moon
+const CITY_GAIN = MODE === "earthmoon" ? 2.0 : 1, NIGHT_P = MODE === "earthmoon" ? 1.0 : 2, NIGHT_AMB = MODE === "earthmoon" ? 0.035 : 0.012
 let EARTH_MAP = null
 function earthMap() {                                                         // 360x180 run-length coded: 0 sea, 1 land, 2 desert, 3 ice
   if (EARTH_MAP) return EARTH_MAP
@@ -917,6 +930,81 @@ function cloudAt(b, la, lo, drift, full) {
   if (full) c *= 0.8 + 0.4 * vnoise3(cx * 30 + 7, b[1] * 52, cz * 30)
   return clamp(c, 0, 1)
 }
+// ---- night lights: tiny warm points clustered on real population centres, coast lines and river valleys, over a faint city-glow ----
+// metros: lon, lat, strength, spread (deg). Each is a bright core with a faint wide halo of suburbs.
+const NL_CITIES = [
+  [139.7, 35.7, 1, 1.5], [135.5, 34.7, 0.85, 1.0], [136.9, 35.2, 0.6, 0.8], [130.4, 33.6, 0.5, 0.7], [141.3, 43.1, 0.35, 0.6], [140.9, 38.3, 0.3, 0.5],
+  [126.9, 37.5, 1, 1.1], [129.0, 35.1, 0.6, 0.6], [128.6, 35.9, 0.4, 0.5],
+  [121.5, 31.2, 1, 1.5], [116.4, 39.9, 0.9, 1.4], [117.2, 39.1, 0.5, 0.8], [113.3, 23.1, 1, 1.4], [114.1, 22.5, 0.9, 0.8], [114.3, 30.6, 0.6, 1.0], [106.5, 29.6, 0.6, 0.9], [104.1, 30.7, 0.55, 0.9],
+  [120.2, 30.3, 0.55, 0.8], [118.8, 32.1, 0.55, 0.8], [108.9, 34.3, 0.5, 0.8], [113.6, 34.8, 0.4, 0.7], [117.0, 36.7, 0.4, 0.7], [120.4, 36.1, 0.4, 0.6], [123.4, 41.8, 0.5, 0.8], [126.6, 45.8, 0.4, 0.7], [112.9, 28.2, 0.4, 0.7], [119.3, 26.1, 0.4, 0.6], [121.5, 25.0, 0.8, 0.7], [120.7, 24.1, 0.5, 0.5], [120.3, 22.6, 0.55, 0.5],
+  [77.2, 28.6, 1, 1.3], [72.8, 19.1, 0.95, 1.1], [88.4, 22.6, 0.8, 1.1], [80.3, 13.1, 0.65, 0.9], [77.6, 13.0, 0.65, 0.9], [78.5, 17.4, 0.55, 0.8], [72.6, 23.0, 0.5, 0.8], [73.9, 18.5, 0.5, 0.8], [80.9, 26.8, 0.45, 0.8], [85.1, 25.6, 0.35, 0.7], [90.4, 23.8, 0.9, 1.0], [67.0, 24.9, 0.75, 1.0], [74.3, 31.5, 0.7, 1.0], [73.1, 33.7, 0.35, 0.6], [79.9, 6.9, 0.4, 0.5], [85.3, 27.7, 0.3, 0.5],
+  [103.8, 1.35, 0.95, 0.35], [101.7, 3.1, 0.7, 0.55], [103.7, 1.5, 0.45, 0.3], [100.3, 5.4, 0.35, 0.3], [100.5, 13.8, 0.75, 0.9], [98.99, 18.8, 0.2, 0.3], [106.8, -6.2, 1, 1.0], [107.6, -6.9, 0.65, 0.6], [110.4, -7.0, 0.4, 0.5], [112.7, -7.3, 0.55, 0.6], [98.7, 3.6, 0.4, 0.5], [106.8, -6.6, 0.4, 0.5],
+  [121.0, 14.6, 0.9, 0.9], [106.7, 10.8, 0.65, 0.8], [105.8, 21.0, 0.6, 0.7], [104.9, 11.6, 0.25, 0.4], [96.2, 16.8, 0.4, 0.6], [123.9, 10.3, 0.25, 0.4], [125.6, 7.1, 0.25, 0.4],
+  [151.2, -33.9, 0.7, 0.8], [145.0, -37.8, 0.55, 0.7], [153.0, -27.5, 0.4, 0.6], [115.9, -32.0, 0.35, 0.5], [138.6, -34.9, 0.3, 0.5], [174.8, -36.8, 0.35, 0.5],
+  [31.2, 30.0, 0.9, 1.0], [32.9, 24.1, 0.2, 0.3], [31.0, 29.9, 0.2, 0.3], [3.4, 6.5, 0.8, 0.9], [7.5, 9.1, 0.2, 0.4], [-0.2, 5.6, 0.4, 0.5], [28.0, -26.2, 0.65, 0.8], [18.4, -33.9, 0.35, 0.5], [31.0, -29.9, 0.3, 0.4], [36.8, -1.3, 0.35, 0.5], [32.6, 0.3, 0.2, 0.4], [3.0, 36.7, 0.3, 0.5], [-7.6, 33.6, 0.3, 0.5], [10.2, 36.8, 0.2, 0.4], [13.2, 32.9, 0.2, 0.3], [-17.4, 14.7, 0.2, 0.4], [15.3, -4.3, 0.3, 0.5], [39.3, -6.8, 0.2, 0.4], [38.7, 9.0, 0.15, 0.4],
+  [29.0, 41.0, 0.75, 0.9], [32.9, 39.9, 0.4, 0.6], [51.4, 35.7, 0.7, 0.9], [46.7, 24.7, 0.5, 0.6], [39.2, 21.5, 0.35, 0.5], [55.3, 25.2, 0.55, 0.6], [51.5, 25.3, 0.25, 0.3], [47.9, 29.4, 0.35, 0.5], [44.4, 33.3, 0.4, 0.7], [35.0, 32.0, 0.55, 0.5], [36.3, 33.5, 0.25, 0.4], [69.2, 41.3, 0.3, 0.5], [51.4, 35.7, 0.3, 0.6], [49.9, 40.4, 0.3, 0.5],
+  [37.6, 55.7, 0.85, 1.4], [30.3, 59.9, 0.5, 0.9], [30.5, 50.4, 0.4, 0.7], [-0.1, 51.5, 1, 1.4], [-1.9, 52.5, 0.5, 0.8], [-2.3, 53.5, 0.5, 0.8], [-3.2, 55.9, 0.2, 0.4], [-6.3, 53.3, 0.3, 0.5],
+  [2.3, 48.9, 0.9, 1.1], [4.9, 52.4, 0.55, 0.8], [4.4, 51.2, 0.55, 0.8], [7.0, 51.4, 0.8, 1.2], [8.7, 50.1, 0.6, 0.8], [11.6, 48.1, 0.45, 0.6], [13.4, 52.5, 0.55, 0.8], [9.9, 53.5, 0.4, 0.6], [16.4, 48.2, 0.4, 0.6], [-3.7, 40.4, 0.6, 0.8], [2.2, 41.4, 0.5, 0.7], [-9.1, 38.7, 0.35, 0.5], [12.5, 41.9, 0.55, 0.8], [9.2, 45.5, 0.6, 0.9], [14.3, 40.9, 0.4, 0.6], [23.7, 38.0, 0.35, 0.5], [21.0, 52.2, 0.45, 0.7], [19.1, 47.5, 0.35, 0.6], [26.1, 44.4, 0.3, 0.6], [18.1, 59.3, 0.3, 0.6], [10.7, 59.9, 0.25, 0.5], [12.6, 55.7, 0.3, 0.5], [24.9, 60.2, 0.25, 0.5],
+  [-74.0, 40.7, 1, 1.7], [-75.2, 39.9, 0.6, 0.9], [-71.1, 42.4, 0.65, 0.9], [-77.0, 38.9, 0.7, 1.1], [-87.6, 41.9, 0.85, 1.4], [-83.1, 42.4, 0.45, 0.8], [-118.2, 34.0, 1, 1.5], [-122.3, 37.7, 0.65, 1.0], [-117.2, 32.8, 0.45, 0.7], [-122.3, 47.6, 0.45, 0.8], [-95.4, 29.8, 0.65, 1.0], [-96.8, 32.8, 0.6, 1.0], [-84.4, 33.7, 0.55, 0.9], [-80.2, 25.8, 0.7, 0.9], [-81.4, 28.5, 0.3, 0.6], [-112.0, 33.4, 0.5, 0.8], [-104.9, 39.7, 0.4, 0.7], [-93.3, 45.0, 0.35, 0.7], [-115.1, 36.2, 0.35, 0.5], [-90.1, 29.9, 0.25, 0.5], [-79.4, 43.7, 0.65, 0.9], [-73.6, 45.5, 0.45, 0.7], [-123.1, 49.3, 0.3, 0.6], [-114.1, 51.0, 0.25, 0.5], [-111.9, 40.8, 0.25, 0.5], [-94.6, 39.1, 0.3, 0.6], [-90.2, 38.6, 0.35, 0.6], [-86.2, 39.8, 0.3, 0.6], [-81.7, 41.5, 0.35, 0.6], [-80.0, 40.4, 0.3, 0.6], [-122.7, 45.5, 0.3, 0.5],
+  [-99.1, 19.4, 0.95, 1.0], [-100.3, 25.7, 0.4, 0.6], [-103.4, 20.7, 0.4, 0.6], [-90.5, 14.6, 0.3, 0.4], [-79.5, 9.0, 0.25, 0.3], [-82.4, 23.1, 0.35, 0.5], [-66.9, 10.5, 0.4, 0.6], [-74.1, 4.7, 0.55, 0.8], [-75.6, 6.2, 0.3, 0.5], [-78.5, -0.2, 0.25, 0.4], [-77.0, -12.0, 0.55, 0.8], [-70.7, -33.5, 0.5, 0.7], [-46.6, -23.5, 1, 1.4], [-43.2, -22.9, 0.8, 1.0], [-47.9, -15.8, 0.35, 0.6], [-38.5, -13.0, 0.4, 0.6], [-34.9, -8.0, 0.4, 0.6], [-38.5, -3.7, 0.35, 0.6], [-43.9, -19.9, 0.45, 0.7], [-51.2, -30.0, 0.35, 0.6], [-49.3, -25.4, 0.35, 0.6], [-58.4, -34.6, 0.85, 1.2], [-56.2, -34.9, 0.3, 0.5], [-68.1, -16.5, 0.25, 0.5], [-57.6, -25.3, 0.2, 0.4], [-60.0, -3.1, 0.12, 0.3]]
+// corridors: polylines with half-width (deg) and strength: coasts and river valleys that glow in a thin line
+const NL_LINES = [
+  [0.8, 0.14, [[32.9, 24.1], [32.7, 25.7], [32.2, 26.6], [31.2, 27.2], [30.8, 28.1], [31.1, 29.1], [31.2, 30.0], [31.3, 31.1]]],
+  [1.1, 0.15, [[100.3, 5.4], [100.7, 4.6], [101.4, 3.5], [101.7, 3.1], [102.3, 2.3], [103.2, 1.6], [103.8, 1.4], [104.2, 1.5]]],
+  [1.0, 0.14, [[139.7, 35.7], [138.4, 35.0], [137.0, 35.1], [136.0, 34.9], [135.0, 34.7], [133.5, 34.5], [132.4, 34.4], [131.0, 34.0], [130.4, 33.6]]],
+  [0.9, 0.12, [[-71.1, 42.4], [-72.9, 41.3], [-74.0, 40.7], [-75.2, 39.9], [-76.6, 39.3], [-77.0, 38.9], [-77.4, 37.5]]],
+  [0.9, 0.11, [[-122.3, 37.7], [-121.9, 37.3], [-120.7, 35.4], [-119.2, 34.2], [-118.2, 34.0], [-117.2, 33.4], [-117.1, 32.7]]],
+  [1.1, 0.13, [[77.2, 28.6], [78.5, 27.5], [80.3, 26.4], [81.8, 25.4], [83.0, 25.3], [85.1, 25.6], [87.0, 24.4], [88.4, 22.6]]],
+  [0.9, 0.12, [[106.8, -6.2], [107.6, -6.9], [108.6, -6.8], [110.4, -7.0], [111.5, -7.6], [112.7, -7.3]]],
+  [1.0, 0.1, [[-38.5, -13.0], [-40.0, -17.0], [-43.2, -22.9], [-46.6, -23.5], [-48.5, -25.5], [-50.0, -27.0], [-51.2, -30.0]]],
+  [0.8, 0.1, [[4.4, 51.2], [4.9, 52.4], [6.0, 51.7], [7.0, 51.4], [7.6, 50.4], [8.3, 49.5], [8.7, 50.1]]],
+  [0.7, 0.1, [[121.5, 31.2], [120.2, 30.3], [119.5, 32.0], [118.8, 32.1], [117.0, 31.9], [114.3, 30.6]]],
+  [0.7, 0.1, [[126.9, 37.5], [127.4, 36.4], [128.6, 35.9], [129.0, 35.1]]],
+  [0.7, 0.1, [[8.9, 44.4], [9.2, 45.5], [10.9, 45.4], [12.3, 45.5], [12.5, 41.9]]],
+  [0.7, 0.09, [[-87.6, 41.9], [-83.1, 42.4], [-81.7, 41.5], [-79.4, 43.7], [-73.6, 45.5]]],
+  [0.6, 0.09, [[151.2, -33.9], [153.0, -27.5]]],
+  [0.6, 0.09, [[114.1, 22.5], [113.3, 23.1], [113.0, 22.3]]],
+  [0.6, 0.09, [[72.8, 19.1], [72.6, 23.0], [73.1, 22.3]]],
+  [0.7, 0.09, [[-0.1, 51.5], [-1.9, 52.5], [-2.3, 53.5]]],
+  [0.6, 0.09, [[-81.4, 28.5], [-80.2, 25.8], [-82.5, 27.9]]]]
+// regions: lon, lat, rural-density amplitude, x spread, y spread (deg): the faint scattered villages and towns between metros
+const NL_REG = [
+  [114, 33, 0.28, 7, 5], [116.5, 37, 0.3, 4, 3.5], [104, 30.5, 0.2, 3, 2.5], [127, 36.5, 0.22, 2.2, 2.2], [121.5, 24, 0.3, 0.9, 1.6], [114, 24, 0.2, 3, 1.8], [117, 26.5, 0.1, 3, 2.5], [123, 41.5, 0.12, 3, 2.5],
+  [80, 26.5, 0.35, 8, 3], [78, 13, 0.2, 4, 4], [74, 19, 0.2, 3, 3], [90, 23.8, 0.3, 2.2, 2], [73.5, 31.5, 0.25, 3, 2.2], [76, 30.5, 0.25, 2.5, 1.5], [86, 24, 0.15, 3, 2], [80, 17, 0.12, 3, 2], [81, 8, 0.12, 1, 2],
+  [100.5, 14, 0.16, 2.5, 3], [106, 10.5, 0.2, 2, 2], [105.8, 21, 0.2, 2, 1.8], [121, 15.5, 0.22, 1.6, 2.5], [110, -7.3, 0.32, 5, 1.3], [101, 3.5, 0.12, 1, 2.2], [98.5, 3.5, 0.1, 1, 1.5], [102, -2, 0.07, 3, 3], [96, 17, 0.1, 2, 3], [120, 16, 0.05, 1, 1],
+  [139.5, 36, 0.3, 2.5, 1.8], [135.2, 34.8, 0.25, 2.5, 1.2], [131.5, 33.5, 0.15, 1.8, 1.2], [141, 39, 0.1, 1.2, 3], [142.5, 43, 0.1, 1.5, 1.2],
+  [8, 50, 0.38, 6, 4], [-1, 52.5, 0.3, 2.5, 3], [2, 47, 0.16, 3.5, 3], [10, 45, 0.3, 3, 1.2], [19, 52, 0.15, 4, 2.5], [32, 49.5, 0.1, 5, 2], [37, 55, 0.18, 3, 2.5], [32, 39.5, 0.09, 4, 1.5], [-4, 40, 0.1, 3, 2], [14, 42, 0.12, 2, 2], [24, 45, 0.08, 4, 2], [18, 60, 0.07, 3, 2], [11, 60, 0.05, 2, 1.5], [-8, 41, 0.07, 1, 1.5], [23.5, 38, 0.08, 1.5, 1.5], [20, 47, 0.08, 3, 1.2],
+  [35, 32, 0.3, 0.8, 1.3], [51, 26.5, 0.15, 3, 1.5], [52, 34, 0.1, 3, 2], [47, 31, 0.12, 2, 2], [32, 30, 0.12, 2, 1.2], [4, 7, 0.28, 3, 1.5], [-1, 6, 0.18, 2, 1], [28, -26, 0.25, 2, 1.5], [37, -1, 0.1, 2, 1.5], [3, 36.7, 0.15, 3, 1], [-7, 33, 0.1, 2, 1], [31, -29, 0.08, 1, 1.2], [31.5, 0.5, 0.06, 2, 1.5], [-15, 14.5, 0.08, 1, 1],
+  [-78, 39.5, 0.3, 5, 4.5], [-87, 41.5, 0.28, 5, 2], [-97, 31, 0.16, 3, 3], [-81.5, 27.5, 0.2, 1.5, 2.2], [-122.4, 47.2, 0.18, 1.2, 2], [-84, 34, 0.15, 3, 2], [-93, 38, 0.08, 6, 3.5], [-118.5, 34.5, 0.2, 2.5, 1.5], [-121.5, 38, 0.1, 1.5, 2.5], [-112, 33.5, 0.12, 2, 1.5], [-105, 40, 0.1, 1.5, 2], [-80, 43, 0.22, 3, 1],
+  [-99, 20, 0.3, 3, 1.5], [-100.5, 25.5, 0.1, 2, 1.5], [-74.5, 5.5, 0.15, 2, 2], [-67, 10.3, 0.12, 2, 0.8], [-77, -12, 0.15, 1, 1.5], [-71, -33.5, 0.2, 0.8, 2], [-46, -22, 0.35, 4, 3], [-59, -34.5, 0.3, 3, 2.5], [-40, -9, 0.1, 1.5, 4], [-47, -16, 0.1, 2, 2], [-51, -29, 0.1, 2, 2], [-57, -25, 0.05, 1, 1.5], [-79.5, 9, 0.1, 1.5, 1], [-90, 15, 0.1, 1.5, 1],
+  [150, -33, 0.22, 1.2, 3], [145, -37.8, 0.15, 2, 1.5], [153, -27.5, 0.15, 1, 2], [174.8, -37, 0.12, 1, 1.5], [138.6, -35, 0.1, 1, 1.2], [115.8, -32, 0.1, 1, 1.2]]
+function nlDensity(lo, la, landF, coast) {
+  let city = 0, lines = 0, rural = 0
+  for (const [cx, cy, st, sp] of NL_CITIES) {
+    const dy = la - cy; if (dy > sp * 3.4 || dy < -sp * 3.4) continue
+    const dx = adiff(lo, cx) * Math.cos(cy * d2r); if (dx > sp * 3.4 || dx < -sp * 3.4) continue
+    const d2 = (dx * dx + dy * dy) / (sp * sp)
+    if (d2 < 11) city += st * (Math.exp(-d2 * 1.5) * 1.15 + 0.22 * Math.exp(-d2 * 0.28))
+  }
+  for (const [hw, st, pts] of NL_LINES) {
+    let best = 1e9
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const a = pts[i], b = pts[i + 1], cs = Math.cos(a[1] * d2r)
+      if (la < Math.min(a[1], b[1]) - hw * 4 || la > Math.max(a[1], b[1]) + hw * 4) continue
+      const ax = adiff(lo, a[0]) * cs, ay = la - a[1], bx = adiff(b[0], a[0]) * cs, by = b[1] - a[1]
+      const l2 = bx * bx + by * by || 1, t = clamp((ax * bx + ay * by) / l2, 0, 1), ex = ax - bx * t, ey = ay - by * t
+      const d = ex * ex + ey * ey; if (d < best) best = d
+    }
+    if (best < hw * hw * 12) lines += st * Math.exp(-best / (hw * hw) * 1.2)
+  }
+  for (const [cx, cy, amp, sx, sy] of NL_REG) {
+    const dy = (la - cy) / sy; if (dy > 3 || dy < -3) continue
+    const dx = adiff(lo, cx) * Math.cos(cy * d2r) / sx; if (dx > 3 || dx < -3) continue
+    rural += amp * Math.exp(-(dx * dx + dy * dy))
+  }
+  const gate = sstep(0.3, 0.65, landF), cg = 0.3 + 0.7 * gate
+  return clamp(city * cg + (lines + rural * (0.7 + 0.9 * coast)) * gate, 0, 1.7)
+}
 function earthSurface(R, s, f, o) {
   const N = surfN(R, s, "earth"), c0 = N / 2, k = R * s, NN = N * N, m = earthMap()
   const sr = new Float32Array(NN), sg = new Float32Array(NN), sb = new Float32Array(NN), om = new Float32Array(NN), cld = new Float32Array(NN), shd = new Float32Array(NN), ht = new Float32Array(NN), inside = new Uint8Array(NN)
@@ -985,7 +1073,7 @@ function earthSurface(R, s, f, o) {
       const day = sstep(-0.05, 0.22, geo), lam = Math.pow(clamp(ndl, 0, 1), 0.72)
       const ca = clamp(cld[p] * 1.08, 0, 0.97), tw = Math.exp(-Math.pow((geo - 0.03) / 0.1, 2))
       const sh = 1 - 0.5 * shd[p] * (1 - ca)
-      let sl = [sr[p] * (lam * day * sh + 0.012), sg[p] * (lam * day * sh + 0.012), sb[p] * (lam * day * sh + 0.012)]
+      let sl = [sr[p] * (lam * day * sh + NIGHT_AMB), sg[p] * (lam * day * sh + NIGHT_AMB), sb[p] * (lam * day * sh + NIGHT_AMB)]
       const nh = Math.max(0, x * HV[0] + y * HV[1] + z * HV[2]), oceanM = om[p] * day * (1 - 0.92 * ca)
       const spec = Math.pow(nh, 90) * 0.55 + Math.pow(nh, 22) * 0.1
       sl = [sl[0] + 255 * spec * oceanM, sl[1] + 246 * spec * oceanM, sl[2] + 226 * spec * oceanM]
@@ -997,27 +1085,41 @@ function earthSurface(R, s, f, o) {
       dc[0] += 14 * ca * (1 - day); dc[1] += 20 * ca * (1 - day); dc[2] += 36 * ca * (1 - day)
       const ha = Math.pow(1 - z, 2.3) * 0.75 * sstep(-0.3, 0.5, geo)
       dc = [dc[0] + 60 * ha, dc[1] + 120 * ha, dc[2] + 250 * ha]
+      if (DRIFT_MS || DRIFT_W > 0) {
+        const dw = sstep(-0.05, 0.4, geo)
+        if (DRIFT_MS) {                                  // the Moon's shadow, only where the Moon really stands between this spot and the Sun
+          const M = DRIFT_MS.M, wx = x - M[0], wy = y - M[1], wz = z - M[2], S = DRIFT_MS.S, t = wx * S[0] + wy * S[1] + wz * S[2]
+          if (t < 0) {
+            const qx = wx - t * S[0], qy = wy - t * S[1], qz = wz - t * S[2], q = Math.sqrt(qx * qx + qy * qy + qz * qz), rm = DRIFT_MS.rm, dd = -t
+            const ms = (1 - sstep(rm * 0.25, rm * (1 + 0.5 * dd), q)) * 0.62 * Math.exp(-dd * 0.12)
+            const k = 1 - ms * dw; dc = [dc[0] * k, dc[1] * k, dc[2] * k]
+          }
+        }
+        if (DRIFT_W > 0) {                               // nearer the Sun: warmer, brighter light and a golden rim on the lit limb
+          const g = 1 + 0.3 * DRIFT_W * dw, rim = Math.pow(1 - z, 2.4) * sstep(-0.1, 0.5, geo) * DRIFT_W * 0.9
+          dc = [dc[0] * g + 255 * rim * 0.9, dc[1] * g * (1 - 0.1 * DRIFT_W * dw) + 150 * rim * 0.9, dc[2] * g * (1 - 0.32 * DRIFT_W * dw) + 60 * rim * 0.9]
+        }
+      }
       const night = 1 - day
       if (nlight && night > 0.2 && z > 0.08) {
         const bb = viewToBody([x, y, z], o), la = -Math.asin(clamp(bb[1], -1, 1)) / d2r, lo = 103.82 + Math.atan2(bb[0], bb[2]) / d2r
-        const cls = m[clamp(Math.floor(90 - la), 0, 179) * 360 + (((Math.floor(lo + 180) % 360) + 360) % 360)]
-        let L = 0
-        if (om[p] < 0.5 && cls !== 3) {
-          let pop = 0
-          for (const [cx, cy, st, sp] of CITIES) {
-            const dy = la - cy; if (dy > sp * 3.4 || dy < -sp * 3.4) continue
-            const dx = adiff(lo, cx) * Math.cos(cy * d2r), d2 = (dx * dx + dy * dy) / (sp * sp)
-            if (d2 < 11) pop += st * (Math.exp(-d2 * 1.6) * 1.2 + 0.28 * Math.exp(-d2 * 0.25))
+        const nl = sstep(0.03, -0.2, geo) * (1 - 0.85 * ca)          // lights fade toward the terminator, vanish on the day side, and hide under cloud
+        if (nl > 0.01 && la < 72 && la > -58 && om[p] < 0.7) {
+          const f4 = (lm(lo + 1.6, la) + lm(lo - 1.6, la) + lm(lo, la + 1.6) + lm(lo, la - 1.6)) / 4, coast = 1 - Math.abs(2 * f4 - 1)
+          const D = nlDensity(lo, la, 1 - om[p], coast)
+          if (D > 0.015) {
+            const F = k * 1.25, f1 = vnoise3(bb[0] * F + 1, bb[1] * F, bb[2] * F + 3), f2 = vnoise3(bb[0] * F * 0.43 + 5, bb[1] * F * 0.43, bb[2] * F * 0.43 + 2)
+            const f3 = vnoise3(bb[0] * 22 + 9, bb[1] * 22, bb[2] * 22 + 4), Dm = Math.min(D, 1.25)
+            const thr = 0.97 - 0.4 * Math.pow(Dm, 0.7), pt = sstep(thr, thr + 0.05, f1 * 0.62 + f2 * 0.18 + f3 * 0.2)
+            let L = pt * (0.25 + 0.5 * Dm) * (0.6 + 0.8 * f2) + 0.14 * Math.pow(Dm, 1.7) * (0.55 + 0.9 * f3)
+            L = Math.min(L * nl * CITY_GAIN, 1.15)
+            const q = Math.min(L, 1)
+            dc = [dc[0] + 255 * L, dc[1] + (170 + 60 * q) * L, dc[2] + (80 + 110 * q * q) * L]
           }
-          const grain = vnoise3(bb[0] * 70 + 1, bb[1] * 70, bb[2] * 70 + 3), cl2 = fbm3(bb[0] * 18 + 1, bb[1] * 18, bb[2] * 18, 2)
-          L = clamp(pop * (0.35 + 1.0 * grain) * (0.6 + 0.8 * cl2), 0, 1.5) * (cls === 2 ? 0.5 : 1) * (1 - sstep(55, 68, Math.abs(la)))
         }
-        const sdx = bb[0], sdy = bb[1] + Math.sin(OBS.lat), sdz = bb[2] - Math.cos(OBS.lat), sg2 = Math.exp(-(sdx * sdx + sdy * sdy + sdz * sdz) / (0.05 * 0.05)) * (z > 0.2 ? 1 : 0)
-        L = clamp(L + sg2 * 1.4, 0, 1.5) * night * night * (1 - 0.8 * ca)
-        dc = [dc[0] + 255 * L, dc[1] + 190 * L, dc[2] + 100 * L]
-        const au = Math.exp(-Math.pow((Math.abs(la) - 67) / 4.5, 2)) * (0.45 + fbm3(bb[0] * 6 + 3, bb[1] * 20, bb[2] * 6, 3)) * night * night * 0.9
+        const au = Math.exp(-Math.pow((Math.abs(la) - 67) / 4.5, 2)) * (0.45 + fbm3(bb[0] * 6 + 3, bb[1] * 20, bb[2] * 6, 3)) * night * night * (MODE === "earthmoon" ? 0.55 : 0.9)
         const pu = fbm3(bb[0] * 3 + 8, bb[1] * 9, bb[2] * 3, 2)
-        dc = [dc[0] + (60 + 110 * pu) * au, dc[1] + (255 - 100 * pu) * au, dc[2] + (140 + 100 * pu) * au]
+        dc = MODE === "earthmoon" ? [dc[0] + (50 + 50 * pu) * au, dc[1] + (255 - 60 * pu) * au, dc[2] + (90 + 40 * pu) * au] : [dc[0] + (60 + 110 * pu) * au, dc[1] + (255 - 100 * pu) * au, dc[2] + (140 + 100 * pu) * au]
       }
     }
     const A = edge + (1 - edge) * aa
@@ -1106,7 +1208,7 @@ const SUNSPOTS = [[-30, 13, 0.034], [-24, 11, 0.017], [-36, 15, 0.013], [-20, 16
 })
 function sunSurface(R, s) {
   const N = Math.ceil(2 * R * s) + 2, c0 = N / 2, k = R * s, px = new Uint8Array(N * N * 4)
-  const W = [[1, 255, 250, 222], [0.72, 255, 232, 150], [0.45, 255, 196, 82], [0.2, 255, 148, 40], [0, 214, 84, 16]]
+  const W = MODE === "earthmoon" ? [[1, 255, 244, 196], [0.72, 255, 216, 108], [0.45, 255, 170, 56], [0.2, 244, 112, 26], [0, 190, 58, 8]] : [[1, 255, 250, 222], [0.72, 255, 232, 150], [0.45, 255, 196, 82], [0.2, 255, 148, 40], [0, 214, 84, 16]]
   for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
     const x = (i + 0.5 - c0) / k, y = (j + 0.5 - c0) / k, rr = Math.sqrt(x * x + y * y)
     const edge = clamp((1 - rr) * k + 0.5, 0, 1)
@@ -1125,7 +1227,7 @@ function sunSurface(R, s) {
       const d = Math.hypot(gx - ox, gy - oy, gz - oz)
       if (d < d1) { d2 = d1; d1 = d; cb = hash3(cx, cy + 5, cz + 3) } else if (d < d2) d2 = d
     }
-    const lane = 1 - sstep(0.0, 0.42, d2 - d1), gran = 1 - 0.075 * lane + 0.06 * (cb - 0.5) + 0.03 * (vnoise3(x * 90, y * 90, z * 90 + 4) - 0.5)
+    const lane = 1 - sstep(0.0, 0.42, d2 - d1), gran = 1 - (MODE === "earthmoon" ? 0.07 : 0.075) * lane + (MODE === "earthmoon" ? 0.1 : 0.06) * (cb - 0.5) + 0.03 * (vnoise3(x * 90, y * 90, z * 90 + 4) - 0.5)
     const sg = fbm3(x * 5.5 + 3, y * 5.5, z * 5.5 + 1, 3), super_ = 0.96 + 0.08 * sg
     const fac = sstep(0.55, 0.85, fbm3(x * 10 + 9, y * 10, z * 10 + 4, 3)) * sstep(0.5, 0.95, 1 - z) * 0.22
     let sp = 1, red = 0
@@ -1204,6 +1306,8 @@ function arcPath(cx, cy, R, th, span, h, n) {                                 //
   }
   return path
 }
+let FLARE_K = 1
+const dotf = (c, x, y, r, h, a) => dot(c, x, y, r, h, a * FLARE_K)
 function sunFlares(ctx, cx, cy, R) {                                          // heat flares: soft glowing loops and plumes rising off the limb (new ones every ~10 minutes), drawn behind the disc
   const r = rng(Math.floor(now.getTime() / 600000) * 7919 + 17), n = 3
   for (let i = 0; i < n; i++) {                                                // loops
@@ -1211,7 +1315,7 @@ function sunFlares(ctx, cx, cy, R) {                                          //
     for (let j = 0; j <= m; j++) {
       const t = j / m, a = th - span + 2 * span * t, rad = R * (1 + h * Math.pow(Math.sin(Math.PI * t), 0.8)) * (0.996 + 0.008 * r())
       const x = cx + Math.cos(a) * rad, y = cy + Math.sin(a) * rad, w = R * (0.022 + 0.02 * Math.sin(Math.PI * t)) * (0.8 + 0.4 * r())
-      dot(ctx, x, y, w * 4, "#FF6A28", 0.013); dot(ctx, x, y, w * 2.2, "#FF8A38", 0.03); dot(ctx, x, y, w * 1.1, "#FFAA60", 0.05); dot(ctx, x, y, w * 0.5, "#FFD59A", 0.06)
+      dotf(ctx, x, y, w * 4, "#FF6A28", 0.013); dotf(ctx, x, y, w * 2.2, "#FF8A38", 0.03); dotf(ctx, x, y, w * 1.1, "#FFAA60", 0.05); dotf(ctx, x, y, w * 0.5, "#FFD59A", 0.06)
     }
   }
   for (let i = 0; i < 2; i++) {                                                // plumes: a cloud of hot gas drifting out and fading
@@ -1220,7 +1324,7 @@ function sunFlares(ctx, cx, cy, R) {                                          //
       const t = j / m, d = R * 0.98 + len * t, wob = (r() - 0.5) * R * 0.06
       const x = cx + Math.cos(th) * d - Math.sin(th) * wob, y = cy + Math.sin(th) * d + Math.cos(th) * wob
       const w = R * (0.1 + 0.16 * t), f = 1 - t
-      dot(ctx, x, y, w * 2.2, "#FF6A28", 0.02 * f); dot(ctx, x, y, w, "#FF9440", 0.045 * f); dot(ctx, x, y, w * 0.45, "#FFC070", 0.06 * f)
+      dotf(ctx, x, y, w * 2.2, "#FF6A28", 0.02 * f); dotf(ctx, x, y, w, "#FF9440", 0.045 * f); dotf(ctx, x, y, w * 0.45, "#FFC070", 0.06 * f)
     }
   }
 }
@@ -1358,6 +1462,80 @@ function drawMoon(ctx, cx, cy, R) {
     if (isSun) { const sx = cx + Math.cos(a) * R * k, sy = cy + Math.sin(a) * R * k; dot(ctx, sx, sy, 2.4, "#FFE2A8", 0.08); dot(ctx, sx, sy, 0.9, "#FFFFFF", 0.85) }
     else twinkle(ctx, cx + Math.cos(a) * R * k, cy + Math.sin(a) * R * k, R * (0.1 + 0.05 * Math.random()), 0.9)
   }
+}
+
+// ======================= EARTH + MOON =======================
+// Only Earth and the Moon are drawn. The Sun is off-screen, to the upper right, and only decides the light:
+// Earth's day/night terminator, the Moon's phase and the eclipse shadows are real Sun-Earth-Moon geometry (scene units: Earth radii, x right, y down, z toward you).
+// The Moon laps Earth once per CYCLE_DAYS (the real 27.3-day sidereal orbit compressed to one week), so its phase is continuous across the weekly reset.
+const T_HRS = CYCLE_DAYS * 24
+const unit3v = (v) => { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / l, v[1] / l, v[2] / l] }
+function orientFrom(By, Bz) {                              // body axes in view coordinates (y = south pole, z = lon 0 / lat 0) -> the {lon, tilt, roll} the surface shaders take
+  const t = -Math.asin(clamp(By[2], -1, 1)), r = Math.atan2(-By[0], By[1]), ct = Math.cos(t)
+  const x1 = Bz[0] * Math.cos(r) + Bz[1] * Math.sin(r)
+  return { lon: Math.atan2(-x1, Bz[2] / ct), tilt: t, roll: r }
+}
+function sunDecl(tMs) {                                    // solar declination in degrees for the date
+  const dt = new Date(tMs), n = Math.floor((tMs - Date.UTC(dt.getUTCFullYear(), 0, 0)) / 86400000)
+  return -23.44 * Math.cos(2 * Math.PI * (n + 10) / 365)
+}
+function driftFace(ctx, W, H, kind, key, file, N, size, cx, cy, make) {
+  const path = fm.joinPath(fm.documentsDirectory(), file), kp = path + ".key"
+  let img = null
+  if (fm.fileExists(path) && fm.fileExists(kp) && fm.readString(kp) === key) img = fm.readImage(path)
+  if (!img) {
+    const t0 = DEBUG_TIMING ? performance.now() : 0
+    img = make()
+    if (DEBUG_TIMING) console.log("SURFMS " + kind + " " + (performance.now() - t0).toFixed(0))
+    try { fm.writeImage(path, img); fm.writeString(kp, key) } catch (err) {}
+  }
+  ctx.drawImageInRect(img, new Rect(cx - size / 2, cy - size / 2, size, size))
+}
+const EM_SUN = unit3v([0.95, -0.3, -0.04])                 // where the (off-screen) Sun is: to the right and a little above, so Earth is half lit and half night
+function drawDrift(ctx, W, H, family, u) {
+  const med = family === "medium", sc = Device.screenScale()
+  const slot = Math.floor(now.getTime() / 600000), tms = slot * 600000            // the scene is re-posed every 10 minutes
+  const hrs = ((tms - prevReset.getTime()) / 3600000 % T_HRS + T_HRS) % T_HRS
+  DRIFT_W = 0
+  // layout (screen points): Earth is big, the Moon laps it; sizes are constant, the Moon is 0.2727 of Earth (real 3475 : 12742 km)
+  const Re = (med ? 34 : 32) * u, rm = 0.2727, orb = med ? 1.7 : 1.85
+  const ex = W * (med ? 0.21 : 0.42), ey = H * (med ? 0.5 : 0.355)
+  const Se = EM_SUN
+  const L0 = [-0.2, -0.8, 0.55], dl = dot3(L0, Se), Ln = unit3v([L0[0] - dl * Se[0], L0[1] - dl * Se[1], L0[2] - dl * Se[2]])   // ecliptic north, perpendicular to the Sun line
+  const Qe = cross3(Ln, Se)
+  const inc = 5.1 * d2r, Qm = [0, 1, 2].map((i) => Qe[i] * Math.cos(inc) + Ln[i] * Math.sin(inc))       // Moon's orbit is inclined 5.1 degrees
+  const phi = 0.9 + 2 * Math.PI * hrs / T_HRS, cp = Math.cos(phi), sp = Math.sin(phi)
+  const M = [0, 1, 2].map((i) => orb * (cp * Se[i] + sp * Qm[i]))                                      // phi = 0 is new moon (Moon toward the Sun), pi is full
+  const Lm = unit3v([Se[0] * 60 - M[0], Se[1] * 60 - M[1], Se[2] * 60 - M[2]])                           // the Sun is far away: its direction at the Moon is the same
+  const mx = ex + M[0] * Re, my = ey + M[1] * Re
+  // orientations: Moon is tidally locked (near side toward Earth, pole along the orbit normal); Earth turns west to east, tilted 23.44 deg from the ecliptic normal
+  const Mn = unit3v(cross3(Se, Qm)), dE = unit3v([-M[0], -M[1], -M[2]])
+  const MBy = [-Mn[0], -Mn[1], -Mn[2]], MBx = cross3(MBy, dE)
+  const moonO = orientFrom(MBy, unit3v(cross3(MBx, MBy)))
+  const dec = sunDecl(tms), eps = 23.44 * d2r
+  const kap = clamp(Math.sin(dec * d2r) / Math.sin(eps), -1, 1), sig = sunDecl(tms + 86400000) > dec ? 1 : -1
+  const Np = unit3v([0, 1, 2].map((i) => Math.cos(eps) * Ln[i] + Math.sin(eps) * (kap * Se[i] + sig * Math.sqrt(1 - kap * kap) * Qe[i])))
+  const hrU = new Date(tms), lamS = 180 - 15 * (hrU.getUTCHours() + hrU.getUTCMinutes() / 60)   // sub-solar longitude (E): the Sun moves west across the surface as Earth turns east
+  const aS = (lamS - 103.82) * d2r, EBy = [-Np[0], -Np[1], -Np[2]]
+  const eh = unit3v([0, 1, 2].map((i) => Se[i] - dot3(Se, EBy) * EBy[i])), kk = cross3(EBy, eh)
+  const EBz = [0, 1, 2].map((i) => eh[i] * Math.cos(aS) - kk[i] * Math.sin(aS)), earthO = orientFrom(EBy, EBz)
+  const drawEarth = () => {
+    LIGHT = Se
+    DRIFT_MS = { M, rm, S: Se }
+    const ss = EARTH_SS, Rt = Re * 1.08, N = surfN(Rt, sc * ss, "earth"), size = N / (sc * ss) * (Re / Rt)
+    const key = `em1-e-${N}-${slot}-${Math.round(M[0] * 20)}_${Math.round(M[1] * 20)}_${Math.round(M[2] * 20)}`
+    driftFace(ctx, W, H, "earth", key, "grok-em-earth.png", N, size, ex, ey, () => earthSurface(Rt, sc * ss, 0.6, earthO).img)
+    DRIFT_MS = null
+  }
+  const drawMoonBody = () => {
+    LIGHT = Lm
+    DRIFT_ECL = { E: [-M[0] / rm, -M[1] / rm, -M[2] / rm], S: Se, Re: 1 / rm }
+    const ss = 2, Rt = rm * Re * 1.08, N = Math.ceil(2 * Rt * sc * ss) + 2, size = N / (sc * ss) * (Re / (Re * 1.08))
+    const key = `em1-m-${N}-${slot}-${Math.round(Lm[0] * 50)}_${Math.round(Lm[1] * 50)}_${Math.round(Lm[2] * 50)}`
+    driftFace(ctx, W, H, "moon", key, "grok-em-moon.png", N, size, mx, my, () => moonSurface(Rt, sc * ss, clamp((1 + Lm[2]) / 2, 0.02, 1), mixHex(MOON_COOL, MOON_WARM, 0.1), moonO).img)
+    DRIFT_ECL = null
+  }
+  if (M[2] < 0) { drawMoonBody(); drawEarth() } else { drawEarth(); drawMoonBody() }
 }
 
 // ---------------- stars ----------------
@@ -1537,7 +1715,7 @@ function render(family, W, H, bg) {
   if (!medium) {
     const dotsY = H * (LABEL ? 0.58 : 0.625), heroY = H * (LABEL ? 0.8 : 0.79)
     if (!pure) shootingStar(ctx, W, H, [{ x: moon.x, y: moon.y, r: moon.R * 2 }, { x0: 0, y0: dotsY - 8, x1: W, y1: H }])
-    drawMoon(ctx, moon.x, moon.y, moon.R)
+    if (MODE === "earthmoon") drawDrift(ctx, W, H, family, u); else drawMoon(ctx, moon.x, moon.y, moon.R)
     dayDots(ctx, W / 2, dotsY, 7.5 * u)
     if (LABEL) starlightText(ctx, LABEL, label, labelSize, W / 2, H * 0.648, "center", labelSpan, shimmer)
     countdown(ctx, formatLeft(leftMs), hero, heroSize, heroHex, W / 2, heroY, "center", glow)
@@ -1546,7 +1724,7 @@ function render(family, W, H, bg) {
     const tx = W * 0.5, gap = 8 * u
     const heroY = H * (LABEL ? 0.55 : 0.455), dotsY = H * (LABEL ? 0.75 : 0.65)
     if (!pure) shootingStar(ctx, W, H, [{ x: moon.x, y: moon.y, r: moon.R * 1.7 }, { x0: tx - 10, y0: H * 0.22, x1: W, y1: H }])
-    drawMoon(ctx, moon.x, moon.y, moon.R)
+    if (MODE === "earthmoon") drawDrift(ctx, W, H, family, u); else drawMoon(ctx, moon.x, moon.y, moon.R)
     if (LABEL) starlightText(ctx, LABEL, label, labelSize, tx + 1, H * 0.3, "left", labelSpan, shimmer)
     countdown(ctx, formatLeft(leftMs), hero, heroSize, heroHex, tx - 1, heroY, "left", glow)
     dayDots(ctx, tx + 2 * u + gap * (CYCLE_DAYS - 1) / 2, dotsY, gap)
