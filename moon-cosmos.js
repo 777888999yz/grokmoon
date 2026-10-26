@@ -38,7 +38,7 @@ const WEEK = ["Moon", "Earth", "Mars", "Jupiter", "Saturn", "Pluto", "Sun"]   //
 const ROTATE_MINUTES = 0                        // show a new body every N minutes, all day (0 = one body per weekly reset)
 const PLAIN_BLACK = true                          // the sky behind everything is flat black (#000000), no nebula or background stars: the widget melts into a black wallpaper
 const WALLPAPER_MODE = true                      // with a background set up: use ONLY your wallpaper behind the widget (no extra stars, nebula or constellation)
-const TAP_URL = "grok://"                          // opens the Grok app; if nothing happens try "https://grok.com" (opens the app via link) or "" for Scriptable
+const TAP_URL = "https://grok.com"                          // opens the Grok app; if nothing happens try "https://grok.com" (opens the app via link) or "" for Scriptable
 // ==================================================
 
 const GOLD = "#E9C877"
