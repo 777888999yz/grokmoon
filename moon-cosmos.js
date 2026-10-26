@@ -307,7 +307,7 @@ const SATD = {
     [1070400, 7.155588, 268.2, 64.6, 58.5, 198.3, 324.8, 0.2], [1882700, 16.69044, 268.7, 64.8, 309.1, 43.8, 87.4, 0.3]],
   saturn: [[1221900, 15.945448, 36.4, 84.0, 78.6, 78.3, 11.7, 0.3]],
   uranus: [[436298, 8.705869, 257.311, -15.175, 29.5, 184.0, 68.1, 0.1], [583511, 13.463237, 257.311, -15.175, 76.8, 132.2, 143.6, 0.1]],
-  pluto: [[19591, 6.3872, 132.99, -6.16, 0, 0, 0, 0]],      // Charon: real period and distance; its starting phase is not from data
+  pluto: [],      // Charon: real period and distance; its starting phase is not from data
   neptune: [[354800, 5.876854, 299.36, 43.46, 177.7, 0, 63.0, 157.3]],
 }
 function satVec(sd) {                                                         // moon position (km) in equatorial coords
@@ -1166,7 +1166,7 @@ const SATS = {
   saturn: [[15.945, 2.6, 0.27, 0.11, "#E7B96B"]],
   uranus: [[8.706, 1.9, 0.15, 0.07, "#C9C4BE"], [13.463, 2.3, 0.15, 0.07, "#B8B0A8"]],
   neptune: [[-5.877, 2.0, 0.2, 0.08, "#D8D2CC"]],
-  pluto: [[6.3872, 2.0, 0.2, 0.32, "#B8A9A0"]],
+  pluto: [],
 }
 let LIGHT = [1, 0, 0]
 let satLimit = 80                                   // max distance from the body centre (set by render)
