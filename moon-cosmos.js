@@ -36,6 +36,7 @@ const SUN_DIRECTION = true                       // the lit side faces where the
 const DAILY = true                               // one body per day of the 7-day week, in the order of WEEK below (overrides ROTATE_MINUTES)
 const WEEK = ["Moon", "Earth", "Mars", "Jupiter", "Saturn", "Pluto", "Sun"]   // day 1 ... day 7 (edit names to change; any of: Moon Mercury Venus Earth Mars Jupiter Saturn Uranus Neptune Sun)
 const ROTATE_MINUTES = 0                        // show a new body every N minutes, all day (0 = one body per weekly reset)
+const PLAIN_BLACK = true                          // the sky behind everything is flat black (#000000), no nebula or background stars: the widget melts into a black wallpaper
 const WALLPAPER_MODE = true                      // with a background set up: use ONLY your wallpaper behind the widget (no extra stars, nebula or constellation)
 const TAP_URL = "grok://"                          // opens the Grok app; if nothing happens try "https://grok.com" (opens the app via link) or "" for Scriptable
 // ==================================================
@@ -1759,17 +1760,13 @@ const DAY_STARS = [
   ["#9CBBFF", 2.6, 9.0, 1]        // R136a1: most massive known star, ~46,000 K: the most intense blue-white, the biggest
 ]
 // The 7 day-stars zig-zag across the widget, alternating the top and bottom band from left to right (a loose, jittered path of the week, clear of Earth, its Moon orbit and the edges). Positions are fractions of the widget [x, y].
-// Each star's brightness is the week clock: a star is faint until its day starts, climbs from dim (1 h in) to full at the end of its 24 h day, then stays full.
+// Lit stars = the day of the week: a star is fully lit from the moment its day starts and stays lit until the weekly reset; stars for days to come are only a tiny faint dot.
 const STAR_POS = {
-  small: [[0.09, 0.14], [0.26, 0.88], [0.38, 0.10], [0.50, 0.905], [0.63, 0.15], [0.76, 0.86], [0.87, 0.12]],     // zig-zag week: days alternate top / bottom band, left to right, with jittered spacing and edge distance; day 7 (R136a1) ends top right; all clear of Earth, the Moon's path (>=0.14) and the edges (>=0.08)
-  medium: [[0.07, 0.12], [0.21, 0.89], [0.35, 0.10], [0.52, 0.91], [0.69, 0.09], [0.82, 0.87], [0.92, 0.13]]
+  small: [[0.14, 0.16], [0.28, 0.87], [0.40, 0.12], [0.53, 0.88], [0.62, 0.14], [0.75, 0.86], [0.84, 0.17]],     // zig-zag week: days alternate top / bottom band, left to right, jittered; inset so halos stay clear of the rounded corners (every star >= 0.12 from an edge, >= 0.16 from the Moon's path)
+  medium: [[0.08, 0.15], [0.21, 0.87], [0.35, 0.11], [0.52, 0.91], [0.69, 0.09], [0.82, 0.86], [0.90, 0.16]]
 }
-const STAR_FAINT = 0.34, STAR_FAINT_LAST = 0.55       // unlit baseline (day 7 shows a little more, the destination)
-function dayGlow(i) {                                // 0..1: how far through its own 24 h day star i is (0 before its day, 1 after)
-  const hrs = (now.getTime() - prevReset.getTime()) / 3600000
-  const f = clamp((hrs - 24 * i) / 24, 0, 1)
-  return 0.5 * f + 0.5 * f * f * (3 - 2 * f)         // gentle ease: slow start, steady middle, soft arrival at full
-}
+// The number of lit stars is the day of the week: day 1 (the first 24 h after the weekly reset) lights star 1, day 2 stars 1-2, ... day 7 all seven. A star is fully lit from the moment its day starts; the rest are only a tiny, very faint dot.
+function starLit(i) { return (now.getTime() - prevReset.getTime()) / 3600000 >= 24 * i }
 // ---- reset-hour effects: all drawn at draw time (scaled cached sprites + small in-memory glow images), so they never touch the cached star sprites ----
 const SINCE_MS = now.getTime() - prevReset.getTime(), SINCE_MIN = SINCE_MS / 60000
 const FIN = lastHour ? 1 - leftMs / 3600000 : 0                     // 0..1 through the final hour before the reset
@@ -1777,10 +1774,13 @@ const FLARE = FIN > 0 ? sstep(0.4, 1, FIN) : SINCE_MIN < 30 ? 1 - sstep(0, 30, S
 const PULSE_PERIOD = 780                                            // seconds per breath (13 min): slower than the ~10 min refresh, so each refresh lands on a different phase
 const PULSE = FIN > 0 ? sstep(0, 0.1, FIN) * Math.sin(2 * Math.PI * (now.getTime() / 1000) / PULSE_PERIOD) : 0   // -1..1, the same for all 7 stars
 const HAZE = SINCE_MS / 3600000 >= 144 ? clamp((SINCE_MS / 3600000 - 144) / 24, 0, 1) : FLARE   // faint blue haze round R136a1 builds across day 7 (and fades with the flare after the reset)
+let AURA_W = 1e9, AURA_H = 1e9                                     // widget size in points, set per render
 function aura(ctx, x, y, hex, R, amp, wob, seed) {                  // a soft round glow: one small RGBA image built in memory per draw (dithered, no banding)
   if (!(amp > 0.004) || !(R > 2)) return
+  R = Math.min(R, 0.92 * Math.min(x, AURA_W - x, y, AURA_H - y))     // a glow always fades out before the widget edge, so no soft box shows against a black wallpaper
+  if (!(R > 2)) return
   try {
-    const N = Math.max(16, Math.min(110, Math.round(R * 1.2))), c = rgb(hex), px = new Uint8Array(N * N * 4), h = N / 2
+    const N = Math.max(16, Math.min(260, Math.round(R * 2.6))), c = rgb(hex), px = new Uint8Array(N * N * 4), h = N / 2
     for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
       const dx = (i + 0.5 - h) / h, dy = (j + 0.5 - h) / h, rr = Math.sqrt(dx * dx + dy * dy)
       if (rr >= 1) continue
@@ -1792,117 +1792,142 @@ function aura(ctx, x, y, hex, R, amp, wob, seed) {                  // a soft ro
     ctx.drawImageInRect(pngFromRGBA(px, N, N), new Rect(x - R, y - R, 2 * R, 2 * R))
   } catch (err) { console.log("aura skipped: " + err) }
 }
-// per star: [brightness weight, size, streak count, warm irregular glow]; the colours and the day brightness come from DAY_STARS and dayGlow
-const STAR_PH = [[0.68, 0.75, 0, 0], [1, 1.15, 4, 0], [0.86, 1.1, 2, 0], [0.8, 1.15, 0, 1], [0.86, 1.25, 0, 1], [0.78, 1.1, 0, 0], [1.1, 1.65, 5, 0]]
-const WARM_C = [1, 0.46, 0.2], LOBE_C = [1, 0.66, 0.42]
-const SPR = 3                                          // star sprite pixels per point
+// per star: [brightness weight, size]; the colours come from DAY_STARS
+const STAR_PH = [[1, 1], [1, 1], [0.95, 1], [0.95, 1.05], [1, 1.05], [0.95, 1.05], [1.25, 1.3]]
+const SPR = Math.max(2, Math.round(Device.screenScale()))   // star sprite pixels per point: one sprite pixel is one device pixel, so the cores stay crisp
 function sn2(ix, iy, s) { let h = (Math.imul(ix, 374761393) + Math.imul(iy, 668265263) + Math.imul(s, 2246822519)) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296 }
 function sv2(x, y, s) {                                // smooth 2D value noise
   const ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy, ux = fx * fx * (3 - 2 * fx), uy = fy * fy * (3 - 2 * fy)
   const a = sn2(ix, iy, s), b = sn2(ix + 1, iy, s), c = sn2(ix, iy + 1, s), d = sn2(ix + 1, iy + 1, s)
   return a + (b - a) * ux + (c - a) * uy + (a - b - c + d) * ux * uy
 }
-// A photographed star, built per pixel: a tiny white-hot core, a seeing-like power-law halo in the star's own colour with slight chromatic fringing, and a very wide faint skirt.
-// The brightest ones also get a few faint, uneven, curved streaks (never a cross); the red supergiants a warm ragged glow; Eta Carinae its two-lobed Homunculus.
-function starSprite(i, e, lit, u, last, big) {                   // big: the small widget, where the stars are drawn larger, brighter and more saturated so they read at 1:1
-  const [b, k, ns, warm] = STAR_PH[i], sz = k * u * (0.88 + 0.18 * e) * (last ? 1.12 : 1) * (big ? 1.55 : 1)
+// A crisp point star, built per pixel at device resolution: a tiny white-hot core, a tight halo in the star's own colour and a very small faint skirt. No spikes, no big soft blobs.
+// A star whose day has not come is just one tiny, very faint dot in its colour.
+function starSprite(i, on, u, last, big) {
+  const [b, k] = STAR_PH[i], g = k * u * (big ? 1.3 : 1.1)                       // pinpoint scale, matched to the wallpaper's own stars (a few device pixels across)
   const T = rgb(DAY_STARS[i][0]).map((v) => v / 255), mx = Math.max(...T), tn = T.map((v) => v / mx)
-  const cc = tn.map((v) => v + (1 - v) * (big ? 0.72 : 0.85)), pc = tn.map((v) => v + (1 - v) * (big ? 0.2 : 0.4)), hc = tn.map((v) => Math.pow(v, big ? 1.8 : 1.35))
-  const rc = (big ? 0.56 : 0.42) * sz, rp = (big ? 1.7 : 1.5) * sz, rh = 6 * sz, r = rng(i * 977 + 13), gate = sstep(0.25, 0.8, e)
-  const st = []
-  for (let q = 0, tries = 0; q < ns && tries < 200; tries++) {                   // random angles, never close together and never opposite: no cross
-    const an = r() * Math.PI * 2, da = (o) => { const t = Math.abs(an - o) % (Math.PI * 2); return Math.min(t, Math.PI * 2 - t) }
-    if (st.some((s) => da(s.an) < 0.75 || da(s.an + Math.PI) < 0.5)) continue
-    st.push({ an, L: sz * (3.5 + 6 * r()), w: 0.2 + 0.16 * r(), cv: (r() - 0.5) * 0.12, a: 0.4 + 0.8 * r(), s: Math.floor(r() * 1000) }); q++
-  }
-  const eta = i === 5, ea = -1.05                      // Eta Carinae's lobes lie along this axis
-  let Rm = rh * (big ? 3.6 : 4.4)
-  for (const s of st) Rm = Math.max(Rm, s.L * 1.1)
-  if (eta) Rm = Math.max(Rm, 9.5 * sz)
-  const N = Math.max(8, Math.round(2 * Rm * SPR)), px = new Uint8Array(N * N * 4), c0 = N / 2, d = 1 / SPR
-  const sw = [0.93, 1, 1.1], hw = [0.95, 1, 1.08], off = [-0.07 * sz, 0, 0.07 * sz], amp = lit * b * (big ? 1.4 : 1), PK = big ? 1.5 : 1, HK = big ? (warm ? 1.45 : 2.1) : 1
-  const cE = Math.cos(ea), sE = Math.sin(ea), E = [0, 0, 0]               // E is reused for every pixel (no per-pixel garbage: the widget has a tight memory limit)
+  const cc = tn.map((v) => v + (1 - v) * 0.85), pc = tn.map((v) => v + (1 - v) * 0.3), hc = tn.map((v) => Math.pow(v, 1.4))
+  const rc = (on ? 0.3 : 0.22) * g, rp = 0.8 * g, rh = 1.9 * g, Rm = on ? 5 * g : 1.6 * g
+  const N = Math.max(8, Math.round(2 * Rm * SPR)), px = new Uint8Array(N * N * 4), c0 = N / 2, d = 1 / SPR, amp = on ? b * DAY_STARS[i][3] : 0.22, E = [0, 0, 0]
   for (let j = 0; j < N; j++) for (let i2 = 0; i2 < N; i2++) {
-    const dx = (i2 + 0.5 - c0) * d, dy = (j + 0.5 - c0) * d, rr0 = Math.sqrt(dx * dx + dy * dy)
-    if (rr0 >= Rm) continue
-    const win = 1 - sstep(0.55, 1, rr0 / Rm), th = Math.atan2(dy, dx)
-    const hmod = 0.82 + 0.36 * sv2(Math.cos(th) * 1.6 + 5, Math.sin(th) * 1.6 + 5, i + 3)
-    let S = 0
-    if (st.length && gate > 0.01 && rr0 > 0.3 * sz) for (const s of st) {
-      const t = dx * Math.cos(s.an) + dy * Math.sin(s.an)
-      if (t <= 0 || t > s.L) continue
-      const p = -dx * Math.sin(s.an) + dy * Math.cos(s.an) - s.cv * t * t, w = s.w + 0.04 * t
-      S += s.a * Math.exp(-(p * p) / (w * w)) * Math.pow(1 + Math.pow(t / (1.3 * sz), 2), -1.1) * (0.35 + 0.95 * sv2(t * 0.8, s.s, 7)) * (1 - sstep(0.5, 1, t / s.L))
-    }
-    let wm = 0
-    if (warm) { const wn = sv2(dx * 0.33 + 20, dy * 0.33 + 20, i) * 0.6 + sv2(dx * 0.8 + 3, dy * 0.8 + 3, i + 9) * 0.4; wm = Math.exp(-Math.pow(rr0 / (rh * 1.15), 1.5)) * (0.2 + 1.45 * wn * wn) }
-    let lobe = 0, lc = 0
-    if (eta) {
-      const ax = dx * cE + dy * sE, pp = -dx * sE + dy * cE, a0 = 3.1 * sz, L = 3.0 * sz, ab = Math.abs(ax)
-      const wd = 1.55 * sz * (0.45 + 0.55 * Math.min(1.25, ab / a0)) * (0.85 + 0.3 * sv2(dx * 0.5 + 9, dy * 0.5 + 9, 4))
-      lobe = Math.exp(-Math.pow((ab - a0) / L, 2) - Math.pow(pp / wd, 2)) * (0.55 + 0.9 * sv2(dx * 0.9 + 2, dy * 0.9 + 7, 11))
-      lc = 1
-    }
+    const dx = (i2 + 0.5 - c0) * d, dy = (j + 0.5 - c0) * d, r2 = dx * dx + dy * dy, rr0 = Math.sqrt(r2)
+    if (rr0 >= N * d / 2) continue
+    const win = 1 - sstep(0.55, 1, rr0 / (N * d / 2))
     for (let ch = 0; ch < 3; ch++) {
-      const ox = dx - off[ch], rc2 = ox * ox + dy * dy
-      E[ch] = amp * (1.5 * Math.exp(-0.5 * rr0 * rr0 / (rc * rc)) * cc[ch]
-        + 0.5 * PK * Math.pow(1 + rc2 / (rp * sw[ch] * rp * sw[ch]), -1.7) * pc[ch]
-        + 0.2 * HK * Math.pow(1 + rc2 / (rh * hw[ch] * rh * hw[ch]), -1.15) * hc[ch] * hmod
-        + gate * 0.3 * PK * S * pc[ch]
-        + warm * 0.15 * (big ? 1.2 : 1) * wm * WARM_C[ch])
-      if (lc) E[ch] += lit * 0.2 * PK * lobe * LOBE_C[ch]
-      E[ch] *= win
+      E[ch] = amp * (on ? 1.7 * Math.exp(-0.5 * r2 / (rc * rc)) * cc[ch] + 0.3 * Math.pow(1 + r2 / (rp * rp), -1.9) * pc[ch] + 0.045 * Math.pow(1 + r2 / (rh * rh), -1.6) * hc[ch]
+        : Math.exp(-0.5 * r2 / (rc * rc)) * (0.7 * tn[ch] + 0.3)) * win
     }
     let m = E[0] > E[1] ? (E[0] > E[2] ? E[0] : E[2]) : (E[1] > E[2] ? E[1] : E[2]); const q = (j * N + i2) * 4
     if (m < 0.0008) continue
-    const mo = m < 0.4 ? m : 0.4 + 0.6 * (1 - Math.exp(-(m - 0.4) / 0.6)), tm = mo / m          // soft shoulder: keeps a gradient in the core instead of a flat clipped disc
+    const mo = m < 0.6 ? m : 0.6 + 0.4 * (1 - Math.exp(-(m - 0.6) / 0.4)), tm = mo / m      // soft shoulder at the very top only: the core stays a bright point
     for (let c2 = 0; c2 < 3; c2++) E[c2] *= tm
     m *= tm
     const al = Math.min(1, m)
     px[q] = Math.min(255, Math.round(E[0] / m * 255)); px[q + 1] = Math.min(255, Math.round(E[1] / m * 255)); px[q + 2] = Math.min(255, Math.round(E[2] / m * 255))
-    px[q + 3] = Math.min(255, Math.floor(al * 255 + Math.random()))      // dithered, so the faint halo has no banding
+    px[q + 3] = Math.min(255, Math.floor(al * 255 + Math.random()))
   }
-  return { img: pngFromRGBA(px, N, N), R: Rm }
+  return { img: pngFromRGBA(px, N, N), R: N * d / 2 }
 }
-function dayStar(ctx, x, y, i, e0, u, big, ks) { try { dayStar1(ctx, x, y, i, e0, u, big, ks || 1) } catch (err) { console.log("star " + i + " skipped: " + err) } }
-function dayStar1(ctx, x, y, i, e0, u, big, ks) {                 // the sprite is cached per star and re-made about hourly while its day is climbing (past days stay full, so they are just a file read)
-  const gain = DAY_STARS[i % DAY_STARS.length][3], last = i === CYCLE_DAYS - 1, eq = Math.round(e0 * 24), e = eq / 24
-  const key = `em5-s-${i}-${Math.round(u * 100)}-${eq}-${big ? 1 : 0}`, path = fm.joinPath(fm.documentsDirectory(), `grok-em-star${i}${big ? "s" : "m"}.png`), kp = path + ".key"
+function dayStar(ctx, x, y, i, on, u, big, ks) { try { dayStar1(ctx, x, y, i, on, u, big, ks || 1) } catch (err) { console.log("star " + i + " skipped: " + err) } }
+function dayStar1(ctx, x, y, i, on, u, big, ks) {                 // the sprite is cached per star in two states (lit or not yet), so it is only ever re-made when a star's day arrives
+  const last = i === CYCLE_DAYS - 1
+  const key = `em8-s-${i}-${Math.round(u * 100)}-${on ? 1 : 0}-${big ? 1 : 0}-${SPR}`, path = fm.joinPath(fm.documentsDirectory(), `grok-em-star${i}${big ? "s" : "m"}.png`), kp = path + ".key"
   let img = null, R = 0
   try {
     if (fm.fileExists(path) && fm.fileExists(kp)) { const [k0, r0] = fm.readString(kp).split("|"); if (k0 === key) { img = fm.readImage(path); R = parseFloat(r0) } }
   } catch (err) { img = null }
   if (!img || !(R > 0)) {
-    const lit = ((last ? STAR_FAINT_LAST : STAR_FAINT) + (1 - (last ? STAR_FAINT_LAST : STAR_FAINT)) * e) * gain
-    const s = starSprite(i, e, lit, u, last, big)
+    const s = starSprite(i, on, u, last, big)
     img = s.img; R = s.R
     try { fm.writeImage(path, img); fm.writeString(kp, key + "|" + R) } catch (err) {}
   }
-  ctx.drawImageInRect(img, new Rect(x - R * ks, y - R * ks, 2 * R * ks, 2 * R * ks))
+  const sc = Device.screenScale(), D = 2 * R * ks, rx = ks === 1 ? Math.round((x - R) * sc) / sc : x - R * ks, ry = ks === 1 ? Math.round((y - R) * sc) / sc : y - R * ks   // snapped to the device pixel grid unless swelling
+  ctx.drawImageInRect(img, new Rect(rx, ry, D, D))
+}
+// ---- the stars wander: each one follows its own smooth pseudo-random path through the free sky, a pure function of the clock (no state, no jump at the weekly reset) ----
+// Free sky = at least 0.10 H from every edge, outside Earth + its glare, at least 0.14 H from the Moon's path; stars stay at least 0.12 H apart. Sprites are cached per star and never touch the position, which is applied at draw time.
+const WANDER_PER = [[17, 13], [21, 15], [14, 19], [19, 24], [23, 16], [15, 21], [20, 12]]   // hours per noise cell, x and y, per star
+const SIDE_PER = [61, 83, 71, 97, 67, 89, 77]   // hours per noise cell for the top/bottom choice
+function vn1(t, sd) { const k = Math.floor(t), f = t - k, w = f * f * (3 - 2 * f); return sn2(k, 7, sd) * (1 - w) + sn2(k + 1, 7, sd) * w }
+function wnoise(hrs, per, sd) { const n = 0.82 * vn1(hrs / per, sd) + 0.18 * vn1(hrs / (per * 0.45) + 11, sd + 50); return clamp(0.5 + (n - 0.5) * 1.5, 0, 1) }
+function freeSky(W, H, med, u) {
+  const Re = (med ? 48 : 35) * u, orb = med ? 1.9 : 1.8, Se = EM_SUN
+  const L0 = [-0.2, -0.8, 0.55], dl = dot3(L0, Se), Ln = unit3v([L0[0] - dl * Se[0], L0[1] - dl * Se[1], L0[2] - dl * Se[2]]), Qe = cross3(Ln, Se)
+  const inc = 5.1 * d2r, Qm = [0, 1, 2].map((i) => Qe[i] * Math.cos(inc) + Ln[i] * Math.sin(inc))
+  const path = []
+  for (let k = 0; k < 120; k++) { const ph = 2 * Math.PI * k / 120, c = Math.cos(ph), s2 = Math.sin(ph); path.push([W / 2 + orb * (c * Se[0] + s2 * Qm[0]) * Re, H / 2 + orb * (c * Se[1] + s2 * Qm[1]) * Re]) }
+  const cell = 3 * u, nx = Math.floor(W / cell), ny = Math.floor(H / cell), inset = 0.1 * H, clr = 0.14 * H + 1.7 * u, ecl = Re + 0.1 * H
+  const ok = new Uint8Array(nx * ny)
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    const X = (i + 0.5) * cell, Y = (j + 0.5) * cell
+    if (X - cell / 2 < inset || X + cell / 2 > W - inset || Y - cell / 2 < inset || Y + cell / 2 > H - inset) continue
+    if (Math.hypot(X - W / 2, Y - H / 2) < ecl) continue
+    let near = false
+    for (let k = 0; k < 120; k++) if (Math.hypot(path[k][0] - X, path[k][1] - Y) < clr) { near = true; break }
+    if (!near) ok[j * nx + i] = 1
+  }
+  return { ok, cell, nx, ny }
+}
+function wanderPos(W, H, family, u) {
+  try {
+    const med = family === "medium", fs = freeSky(W, H, med, u), { ok, cell, nx, ny } = fs, inset = 0.1 * H, hrs = now.getTime() / 3600000
+    const snap = (x, y) => {                              // nearest free cell centre (or the point itself if it is free)
+      const ci = clamp(Math.floor(x / cell), 0, nx - 1), cj = clamp(Math.floor(y / cell), 0, ny - 1)
+      if (ok[cj * nx + ci]) return [x, y]
+      let best = 1e9, bx = x, by = y
+      for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) if (ok[j * nx + i]) { const dx = (i + 0.5) * cell - x, dy = (j + 0.5) * cell - y, d = dx * dx + dy * dy; if (d < best) { best = d; bx = (i + 0.5) * cell; by = (j + 0.5) * cell } }
+      return [bx, by]
+    }
+    const dmin = 0.12 * H, P = []
+    const regions = [[], [], [], []]                       // [half + 2 * side]: the free columns of that quarter of the sky, each with its list of free rows
+    for (let i = 0; i < nx; i++) for (let h = 0; h < 2; h++) {
+      const rows = []
+      for (let j = 0; j < ny; j++) if (ok[j * nx + i] && ((j + 0.5) * cell >= H / 2) === (h === 1)) rows.push(j)
+      if (rows.length) regions[h + 2 * (med && (i + 0.5) * cell > W / 2 ? 1 : 0)].push([i, rows])
+    }
+    const clash = (x, y) => { for (const p of P) if (Math.hypot(p[0] - x, p[1] - y) < dmin) return true; return false }
+    for (let s = 0; s < CYCLE_DAYS; s++) {
+      const nX = wnoise(hrs, WANDER_PER[s][0], 3 + s * 17), v = wnoise(hrs, WANDER_PER[s][1], 101 + s * 29)
+      const wantLow = wnoise(hrs, SIDE_PER[s], 201 + s * 13) >= 0.5, wantRight = med && wnoise(hrs, SIDE_PER[(s + 3) % 7], 301 + s * 11) >= 0.5   // slow coins: top or bottom half, and (medium only) left or right, so a star changes region only about every day or two
+      let cols = null
+      for (let t = 0; t < 4 && !cols; t++) { const c = regions[(wantLow !== ((t & 1) === 1) ? 1 : 0) + 2 * (med && wantRight !== ((t & 2) === 2) ? 1 : 0)]; if (c.length) cols = c }
+      if (!cols) { P.push(snap(W / 2, H / 2)); continue }
+      const qx = nX * cols.length, kx = Math.min(cols.length - 1, Math.floor(qx)), ci = cols[kx][0], col = cols[kx][1]
+      const X = (ci + (qx - kx)) * cell
+      let x = X, y = H / 2
+      { const q = v * col.length, k = Math.min(col.length - 1, Math.floor(q)); y = (col[k] + (q - k)) * cell }   // v picks a height among the free cells of this column, so stars spread over the free sky instead of piling on its border
+      if (clash(x, y)) {                                  // too close to an earlier star: take the nearest free spot that is not
+        let best = 1e9, bx = x, by = y
+        for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) if (ok[j * nx + i]) {
+          const cx = (i + 0.5) * cell, cy = (j + 0.5) * cell, d = (cx - x) * (cx - x) + (cy - y) * (cy - y)
+          if (d < best && !clash(cx, cy)) { best = d; bx = cx; by = cy }
+        }
+        x = bx; y = by
+      }
+      P.push([x, y])
+    }
+    return P
+  } catch (err) { console.log("wander skipped: " + err); return null }
 }
 function dayDots(ctx, W, H, family, u) {
   for (let i = 0; i < CYCLE_DAYS; i++) {                // tidy up the pre-release star sprite names (nothing else piles up: each cache file keeps one fixed name and is overwritten)
     try { const old = fm.joinPath(fm.documentsDirectory(), `grok-em-star${i}.png`); if (fm.fileExists(old)) fm.remove(old); if (fm.fileExists(old + ".key")) fm.remove(old + ".key") } catch (err) {}
   }
   const pos = STAR_POS[family === "medium" ? "medium" : "small"]
-  const big = family !== "medium", P = pos.map((p) => [W * p[0], H * p[1]])
+  const big = family !== "medium", P = wanderPos(W, H, family, u) || pos.map((p) => [W * p[0], H * p[1]])   // wandering stars; the fixed zig-zag layout below is only the fallback
   for (let i = 0; i < CYCLE_DAYS; i++) {
-    const [x, y] = P[i], last = i === CYCLE_DAYS - 1, sc = (big ? 1.5 : 1) * u * STAR_PH[i][1]
-    let ks = 1 + 0.1 * PULSE
-    if (PULSE !== 0) aura(ctx, x, y, mixHex(DAY_STARS[i][0], "#FFFFFF", 0.35), 15 * sc, 0.24 * (0.5 + 0.5 * PULSE), 0, 0)
-    if (last) {
-      const e7 = dayGlow(i)                                     // day 7 is the biggest, brightest star all week: a steady wide blue halo that follows its brightness, and a larger drawn size
-      aura(ctx, x, y, "#9CBBFF", (big ? 40 : 30) * u, 0.34 * e7, 0.2, 13)
-      aura(ctx, x, y, "#E6EEFF", (big ? 15 : 12) * u, 0.38 * e7, 0, 0)
-      ks *= 1.45
-      if (HAZE > 0.01) aura(ctx, x, y, "#4F7DFF", (big ? 34 : 28) * u * (0.7 + 0.5 * HAZE) + 22 * u * FLARE, 0.26 * Math.pow(HAZE, 1.15), 0.35, 5)   // blue haze, growing through day 7
+    const [x, y] = P[i], last = i === CYCLE_DAYS - 1, on = starLit(i), g = u * (big ? 1.3 : 1.1) * STAR_PH[i][1]
+    let ks = 1
+    if (PULSE !== 0 && on) aura(ctx, x, y, mixHex(DAY_STARS[i][0], "#FFFFFF", 0.35), 4.5 * g, 0.16 * (0.5 + 0.5 * PULSE), 0, 0)   // the final-hour breath: all stars glow together, a tight halo and no size change, so the cores stay sharp
+    if (last && on) {
+      if (HAZE > 0.01) aura(ctx, x, y, "#4F7DFF", (big ? 8 : 7) * u * (0.7 + 0.5 * HAZE) + 4 * u * FLARE, 0.12 * Math.pow(HAZE, 1.15), 0.3, 5)   // a small blue haze that grows through day 7
       if (FLARE > 0.01) {
-        aura(ctx, x, y, "#9CBBFF", (big ? 44 : 36) * u * (0.8 + 0.4 * FLARE), 0.26 * FLARE, 0.2, 9)
-        aura(ctx, x, y, "#E6EEFF", (big ? 24 : 20) * u * (0.8 + 0.4 * FLARE), 0.55 * FLARE, 0, 0)
+        aura(ctx, x, y, "#9CBBFF", (big ? 7 : 6) * u * (0.8 + 0.4 * FLARE), 0.2 * FLARE, 0.15, 9)
+        aura(ctx, x, y, "#E6EEFF", (big ? 3.5 : 3) * u * (0.8 + 0.4 * FLARE), 0.4 * FLARE, 0, 0)
       }
-      ks *= 1 + 0.45 * FLARE
+      ks = 1 + 0.25 * FLARE                                     // a modest final-hour swell
     }
-    dayStar(ctx, x, y, i, dayGlow(i), u, big, ks)
+    dayStar(ctx, x, y, i, on, u, big, ks)
   }
 }
 // countdown: hair-spaced letters, a plain word space between the parts, and a faint top highlight
@@ -1914,19 +1939,20 @@ function countdown(ctx, str, font, size, hex, x, y, align, strength) {
 
 // ---------------- widget art ----------------
 function render(family, W, H, bg) {
+  AURA_W = W; AURA_H = H
   const ctx = new DrawContext()
   ctx.size = new Size(W, H)
   ctx.opaque = true
   ctx.respectScreenScale = true
-  if (bg) ctx.drawImageInRect(bg, new Rect(0, 0, W, H))
-  else { ctx.setFillColor(new Color("#030305")); ctx.fillRect(new Rect(0, 0, W, H)) }
+  if (bg && !PLAIN_BLACK) ctx.drawImageInRect(bg, new Rect(0, 0, W, H))
+  else { ctx.setFillColor(new Color(PLAIN_BLACK ? "#000000" : "#030305")); ctx.fillRect(new Rect(0, 0, W, H)) }
 
   const u = H / 170
   const medium = family === "medium"
   const moon = medium ? { x: W * 0.25, y: H * 0.5, R: 39 * u } : { x: W / 2, y: LABEL ? H * 0.3 : H * 0.31, R: (LABEL ? 24 : 27) * u }
   satLimit = medium ? Math.min(moon.x - 4, W * 0.5 - 12 - moon.x) : W / 2 - 4
   const box = medium ? { x0: W * 0.5 - 10, y0: H * 0.22, x1: W, y1: H } : { x0: 0, y0: H * 0.52, x1: W, y1: H }
-  const pure = !!bg && WALLPAPER_MODE
+  const pure = PLAIN_BLACK || (!!bg && WALLPAPER_MODE)
   if (FANCY && !pure) atmosphere(ctx, W, H, moon, box, bg)
   if (!pure) drawStars(ctx, W, H, bg ? (medium ? 36 : 22) : (medium ? 110 : 60), moon)
 
