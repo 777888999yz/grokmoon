@@ -1808,16 +1808,16 @@ function sv2(x, y, s) {                                // smooth 2D value noise
 function starSprite(i, on, u, last, big) {
   const [b, k] = STAR_PH[i], g = k * u * (big ? 1.3 : 1.1)                       // pinpoint scale, matched to the wallpaper's own stars (a few device pixels across)
   const T = rgb(DAY_STARS[i][0]).map((v) => v / 255), mx = Math.max(...T), tn = T.map((v) => v / mx)
-  const cc = tn.map((v) => v + (1 - v) * 0.85), pc = tn.map((v) => v + (1 - v) * 0.3), hc = tn.map((v) => Math.pow(v, 1.4))
-  const rc = (on ? 0.3 : 0.22) * g, rp = 0.8 * g, rh = 1.9 * g, Rm = on ? 5 * g : 1.6 * g
-  const N = Math.max(8, Math.round(2 * Rm * SPR)), px = new Uint8Array(N * N * 4), c0 = N / 2, d = 1 / SPR, amp = on ? b * DAY_STARS[i][3] : 0.22, E = [0, 0, 0]
+  const cc = tn.map((v) => v + (1 - v) * 0.6), pc = tn.map((v) => v + (1 - v) * 0.12), hc = tn.map((v) => Math.pow(v, 1.4))   // saturated: the core is only a little whitened, the halo is the star's own colour
+  const rc = (on ? 0.42 : 0.2) * g, rp = (on ? 1.2 : 0.8) * g, rh = 2.4 * g, Rm = on ? 6.5 * g : 1.6 * g   // a lit star: a clear 3-4 device-pixel core and a small halo; a gone-out star: a barely-there dim dot
+  const N = Math.max(8, Math.round(2 * Rm * SPR)), px = new Uint8Array(N * N * 4), c0 = N / 2, d = 1 / SPR, amp = on ? b * DAY_STARS[i][3] : 0.1, E = [0, 0, 0]
   for (let j = 0; j < N; j++) for (let i2 = 0; i2 < N; i2++) {
     const dx = (i2 + 0.5 - c0) * d, dy = (j + 0.5 - c0) * d, r2 = dx * dx + dy * dy, rr0 = Math.sqrt(r2)
     if (rr0 >= N * d / 2) continue
     const win = 1 - sstep(0.55, 1, rr0 / (N * d / 2))
     for (let ch = 0; ch < 3; ch++) {
       E[ch] = amp * (on ? 1.7 * Math.exp(-0.5 * r2 / (rc * rc)) * cc[ch] + 0.3 * Math.pow(1 + r2 / (rp * rp), -1.9) * pc[ch] + 0.045 * Math.pow(1 + r2 / (rh * rh), -1.6) * hc[ch]
-        : Math.exp(-0.5 * r2 / (rc * rc)) * (0.7 * tn[ch] + 0.3)) * win
+        : Math.exp(-0.5 * r2 / (rc * rc)) * 0.55 * tn[ch]) * win
     }
     let m = E[0] > E[1] ? (E[0] > E[2] ? E[0] : E[2]) : (E[1] > E[2] ? E[1] : E[2]); const q = (j * N + i2) * 4
     if (m < 0.0008) continue
@@ -1833,7 +1833,7 @@ function starSprite(i, on, u, last, big) {
 function dayStar(ctx, x, y, i, on, u, big, ks) { try { dayStar1(ctx, x, y, i, on, u, big, ks || 1) } catch (err) { console.log("star " + i + " skipped: " + err) } }
 function dayStar1(ctx, x, y, i, on, u, big, ks) {                 // the sprite is cached per star in two states (lit or not yet), so it is only ever re-made when a star's day arrives
   const last = i === CYCLE_DAYS - 1
-  const key = `em8-s-${i}-${Math.round(u * 100)}-${on ? 1 : 0}-${big ? 1 : 0}-${SPR}`, path = fm.joinPath(fm.documentsDirectory(), `grok-em-star${i}${big ? "s" : "m"}.png`), kp = path + ".key"
+  const key = `em9-s-${i}-${Math.round(u * 100)}-${on ? 1 : 0}-${big ? 1 : 0}-${SPR}`, path = fm.joinPath(fm.documentsDirectory(), `grok-em-star${i}${big ? "s" : "m"}.png`), kp = path + ".key"
   let img = null, R = 0
   try {
     if (fm.fileExists(path) && fm.fileExists(kp)) { const [k0, r0] = fm.readString(kp).split("|"); if (k0 === key) { img = fm.readImage(path); R = parseFloat(r0) } }
