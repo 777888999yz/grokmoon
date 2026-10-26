@@ -1770,7 +1770,11 @@ function starLit(i) { return i <= CYCLE_DAYS - 1 - Math.min(CYCLE_DAYS - 1, Math
 // ---- reset-hour effects: all drawn at draw time (scaled cached sprites + small in-memory glow images), so they never touch the cached star sprites ----
 const SINCE_MS = now.getTime() - prevReset.getTime(), SINCE_MIN = SINCE_MS / 60000
 const FIN = lastHour ? 1 - leftMs / 3600000 : 0                     // 0..1 through the final hour before the reset
-const SWELL = leftMs <= 10800000 ? Math.pow(1 - leftMs / 10800000, 2.2) : SINCE_MIN < 30 ? 1 - sstep(0, 30, SINCE_MIN) : 0   // 0..1: the lone last star swells over the final 3 h (ease-in, peak = 1 at the reset); at the reset all 7 relight together and the swell settles over ~30 min
+const SWELL_ON = leftMs <= 10800000 || SINCE_MIN < 30           // the existing final-3h swell window and the post-reset settle: this alone drives the faster refresh
+const RAMP = leftMs <= 86400000 && leftMs > 10800000 ? Math.pow((86400000 - leftMs) / 75600000, 1.3) : 0   // 0..1 over the last 24 h down to 3 h left (ease-in): the lit star(s) brighten and grow a little more every refresh, drawn on the cached sprite
+const SWELL_RAW = leftMs <= 10800000 ? Math.pow(1 - leftMs / 10800000, 2.2) : SINCE_MIN < 30 ? 1 - sstep(0, 30, SINCE_MIN) : 0   // 0..1: the lone last star swells over the final 3 h (ease-in, peak = 1 at the reset); at the reset all 7 relight together and the swell settles over ~30 min
+const RAMP_SHARE = 0.55                                          // the 24 h ramp climbs to this share of the full swell by 3 h left; the final-3 h swell takes it from there to 1 at the reset, with no jump at either seam
+const SWELL = leftMs <= 10800000 ? RAMP_SHARE + (1 - RAMP_SHARE) * SWELL_RAW : SINCE_MIN < 30 ? SWELL_RAW : RAMP_SHARE * RAMP   // 0..1, continuous: 0 at 24 h left -> 0.55 at 3 h -> 1 at the reset -> settles to 0 within 30 min
 const LIT_N = CYCLE_DAYS - Math.min(CYCLE_DAYS - 1, Math.floor(SINCE_MS / 86400000))   // stars still lit: 7 right after the reset, 1 on the last day
 const BOOST = (CYCLE_DAYS - LIT_N) / (CYCLE_DAYS - 1)              // 0 with 7 lit .. 1 with 1 lit: each star that goes out makes the survivors a step brighter (and a touch bigger), applied at draw time
 const SWELL_K = 0.7                                                  // size at the peak = 1 + SWELL_K, the same for every star
@@ -1852,7 +1856,12 @@ const WANDER_PER = [[17, 13], [21, 15], [14, 19], [19, 24], [23, 16], [15, 21], 
 const SIDE_PER = [61, 83, 71, 97, 67, 89, 77]   // hours per noise cell for the top/bottom choice
 function vn1(t, sd) { const k = Math.floor(t), f = t - k, w = f * f * (3 - 2 * f); return sn2(k, 7, sd) * (1 - w) + sn2(k + 1, 7, sd) * w }
 function wnoise(hrs, per, sd) { const n = 0.82 * vn1(hrs / per, sd) + 0.18 * vn1(hrs / (per * 0.45) + 11, sd + 50); return clamp(0.5 + (n - 0.5) * 1.5, 0, 1) }
+let FS_KEY = "", FS_VAL = null
 function freeSky(W, H, med, u) {
+  const fk = `${W}|${H}|${med}|${u}`; if (fk === FS_KEY && FS_VAL) return FS_VAL
+  FS_KEY = fk; FS_VAL = freeSkyCalc(W, H, med, u); return FS_VAL
+}
+function freeSkyCalc(W, H, med, u) {
   const Re = (med ? 48 : 35) * u, orb = med ? 1.9 : 1.8, Se = EM_SUN
   const L0 = [-0.2, -0.8, 0.55], dl = dot3(L0, Se), Ln = unit3v([L0[0] - dl * Se[0], L0[1] - dl * Se[1], L0[2] - dl * Se[2]]), Qe = cross3(Se, Ln)
   const inc = 5.1 * d2r, Qm = [0, 1, 2].map((i) => Qe[i] * Math.cos(inc) + Ln[i] * Math.sin(inc))
@@ -1911,12 +1920,60 @@ function wanderPos(W, H, family, u) {
     return P
   } catch (err) { console.log("wander skipped: " + err); return null }
 }
+// ---- sparkles: a few tiny white pinpoints that twinkle in and out and re-seed every ~13 min, so they read as wallpaper dust and never as countdown stars ----
+// Positions are a pure function of the clock. Each sparkle lives in its own staggered 13-min slot: it fades in, peaks mid-slot, fades out, and the next slot picks a new free spot while it is invisible.
+// They stay in the free sky (off the edges and corners, away from Earth + glare and the Moon's path), keep clear of the 7 named stars and of each other, and are far smaller, whiter and dimmer than any lit star.
+const SPARK_SLOT = 780000, SPARK_LV = [0.28, 0.42, 0.58, 0.74, 0.9]   // slot length (ms); peak opacity per brightness level (a lit star core is ~1.0)
+const SPARK_MEM = {}                                                  // tiny sprites, built once per run in memory: [level, glint] -> image (a handful of 3x3 / 7x7 images, nothing is written to disk)
+function sparkSprite(lv, glint) {
+  const key = lv + (glint ? "g" : "d")
+  if (SPARK_MEM[key]) return SPARK_MEM[key]
+  const N = glint ? 7 : 3, c0 = (N - 1) / 2, px = new Uint8Array(N * N * 4), a = SPARK_LV[lv]
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const dx = i - c0, dy = j - c0, r2 = dx * dx + dy * dy
+    let v = Math.exp(-0.5 * r2 / 0.5)                               // a ~1-pixel dot, a faint 1-pixel skirt
+    if (glint && (dx === 0 || dy === 0) && r2 > 0) v = Math.max(v, 0.3 * Math.exp(-0.45 * (Math.sqrt(r2) - 1)) * (r2 > 4 ? 0.55 : 1))   // a very faint 4-point glint, 3 px each way
+    const q = (j * N + i) * 4
+    px[q] = 248; px[q + 1] = 250; px[q + 2] = 255; px[q + 3] = Math.min(255, Math.round(a * v * 255))
+  }
+  SPARK_MEM[key] = { img: pngFromRGBA(px, N, N), N }
+  return SPARK_MEM[key]
+}
+function sparkles(ctx, W, H, family, u, P) {
+  try {
+    const med = family === "medium", NS = med ? 22 : 14, fs = freeSky(W, H, med, u), { ok, cell, nx, ny } = fs, ms = now.getTime(), sc = Device.screenScale()
+    const cells = []; for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) if (ok[j * nx + i]) cells.push([i, j])
+    if (!cells.length) return
+    const dStar = 0.11 * H, dSp = 0.04 * H, placed = []
+    for (let j = 0; j < NS; j++) {
+      const off = sn2(j, 3, 8101) * SPARK_SLOT, t = ms + off, k = Math.floor(t / SPARK_SLOT), ph = t / SPARK_SLOT - k
+      if (sn2(k, j, 8102) < 0.08) continue                           // a slot now and then stays dark: the sky is never the same twice
+      const env = sstep(0, 0.3, ph) * (1 - sstep(0.7, 1, ph)),   // fade in, hold, fade out: invisible at both slot edges, so the jump to a new spot is never seen
+         bri = 0.6 + 0.4 * sn2(k, j, 8103), v = env * bri
+      let x = 0, y = 0, got = false
+      for (let a = 0; a < 14 && !got; a++) {
+        const c = cells[Math.floor(sn2(k, j * 31 + a, 8104) * cells.length)]
+        x = (c[0] + 0.15 + 0.7 * sn2(k, j * 31 + a, 8105)) * cell; y = (c[1] + 0.15 + 0.7 * sn2(k, j * 31 + a, 8106)) * cell
+        got = true
+        for (const p of P) if (Math.hypot(p[0] - x, p[1] - y) < dStar) { got = false; break }
+        if (got) for (const p of placed) if (Math.hypot(p[0] - x, p[1] - y) < dSp) { got = false; break }
+      }
+      if (!got) continue
+      placed.push([x, y])                                            // reserve the spot even while it is faint, so spots never swap places
+      const lv = Math.floor(v * 5.2); if (lv < 0 || v < 0.12) continue
+      const L = Math.min(4, lv), glint = sn2(k, j, 8107) < 0.28 && L >= 3
+      const sp = sparkSprite(L, glint), d = sp.N / SPR, cx = (Math.floor(x * sc) + 0.5) / sc, cy = (Math.floor(y * sc) + 0.5) / sc
+      ctx.drawImageInRect(sp.img, new Rect(cx - d / 2, cy - d / 2, d, d))
+    }
+  } catch (err) { console.log("sparkles skipped: " + err) }
+}
 function dayDots(ctx, W, H, family, u) {
   for (let i = 0; i < CYCLE_DAYS; i++) {                // tidy up the pre-release star sprite names (nothing else piles up: each cache file keeps one fixed name and is overwritten)
     try { const old = fm.joinPath(fm.documentsDirectory(), `grok-em-star${i}.png`); if (fm.fileExists(old)) fm.remove(old); if (fm.fileExists(old + ".key")) fm.remove(old + ".key") } catch (err) {}
   }
   const pos = STAR_POS[family === "medium" ? "medium" : "small"]
   const big = family !== "medium", P = wanderPos(W, H, family, u) || pos.map((p) => [W * p[0], H * p[1]])   // wandering stars; the fixed zig-zag layout below is only the fallback
+  sparkles(ctx, W, H, family, u, P)                       // under the stars, so a lit star always wins
   for (let i = 0; i < CYCLE_DAYS; i++) {
     const [x, y] = P[i], last = i === CYCLE_DAYS - 1, on = starLit(i), g = u * (big ? 1.3 : 1.1) * STAR_PH[i][1], g0 = STAR_PH[i][1]
     let ks = 1
@@ -2002,7 +2059,7 @@ function buildWidget(family) {
   w.backgroundImage = render(fam, W, H, bg)
   // random 1-5 min refresh (iOS may still refresh less often); every minute in the last hour
   const toSlot = ROTATE_MINUTES > 0 ? ROTATE_MINUTES * 60000 - (now.getTime() % (ROTATE_MINUTES * 60000)) + 2000 : 1e12
-  const step = Math.min(toSlot, lastHour ? 60000 : SWELL > 0 ? 120000 : (60 + Math.floor(Math.random() * 241)) * 1000)
+  const step = Math.min(toSlot, lastHour ? 60000 : SWELL_ON ? 120000 : (60 + Math.floor(Math.random() * 241)) * 1000)
   if (TAP_URL) w.url = TAP_URL
   w.refreshAfterDate = new Date(Math.min(now.getTime() + step, nextReset.getTime() + 5000))
   return w
