@@ -1776,6 +1776,7 @@ const SWELL_RAW = leftMs <= 10800000 ? Math.pow(1 - leftMs / 10800000, 2.2) : SI
 const RAMP_SHARE = 0.55                                          // the 24 h ramp climbs to this share of the full swell by 3 h left; the final-3 h swell takes it from there to 1 at the reset, with no jump at either seam
 const SWELL = leftMs <= 10800000 ? RAMP_SHARE + (1 - RAMP_SHARE) * SWELL_RAW : SINCE_MIN < 30 ? SWELL_RAW : RAMP_SHARE * RAMP   // 0..1, continuous: 0 at 24 h left -> 0.55 at 3 h -> 1 at the reset -> settles to 0 within 30 min
 const LIT_N = CYCLE_DAYS - Math.min(CYCLE_DAYS - 1, Math.floor(SINCE_MS / 86400000))   // stars still lit: 7 right after the reset, 1 on the last day
+const STEP = CYCLE_DAYS - LIT_N                                  // 0 with 7 lit .. 6 with 1 lit
 const BOOST = (CYCLE_DAYS - LIT_N) / (CYCLE_DAYS - 1)              // 0 with 7 lit .. 1 with 1 lit: each star that goes out makes the survivors a step brighter (and a touch bigger), applied at draw time
 const SWELL_K = 0.7                                                  // size at the peak = 1 + SWELL_K, the same for every star
 const PULSE_PERIOD = 780                                            // seconds per breath (13 min): slower than the ~10 min refresh, so each refresh lands on a different phase
@@ -1857,27 +1858,42 @@ const SIDE_PER = [61, 83, 71, 97, 67, 89, 77]   // hours per noise cell for the 
 function vn1(t, sd) { const k = Math.floor(t), f = t - k, w = f * f * (3 - 2 * f); return sn2(k, 7, sd) * (1 - w) + sn2(k + 1, 7, sd) * w }
 function wnoise(hrs, per, sd) { const n = 0.82 * vn1(hrs / per, sd) + 0.18 * vn1(hrs / (per * 0.45) + 11, sd + 50); return clamp(0.5 + (n - 0.5) * 1.5, 0, 1) }
 let FS_KEY = "", FS_VAL = null
-function freeSky(W, H, med, u) {
-  const fk = `${W}|${H}|${med}|${u}`; if (fk === FS_KEY && FS_VAL) return FS_VAL
+let FS_KEY2 = "", FS_VAL2 = null
+function freeSky(W, H, med, u, tight) {   // tight = the sparkles' map: a little closer to Earth, the Moon's path and the edges than the named stars may go
+  const fk = `${W}|${H}|${med}|${u}`
+  if (tight) { if (fk === FS_KEY2 && FS_VAL2) return FS_VAL2; FS_KEY2 = fk; FS_VAL2 = freeSkyCalc(W, H, med, u, true); return FS_VAL2 }
+  if (fk === FS_KEY && FS_VAL) return FS_VAL
   FS_KEY = fk; FS_VAL = freeSkyCalc(W, H, med, u); return FS_VAL
 }
-function freeSkyCalc(W, H, med, u) {
+function freeSkyCalc(W, H, med, u, tight) {
   const Re = (med ? 48 : 35) * u, orb = med ? 1.9 : 1.8, Se = EM_SUN
   const L0 = [-0.2, -0.8, 0.55], dl = dot3(L0, Se), Ln = unit3v([L0[0] - dl * Se[0], L0[1] - dl * Se[1], L0[2] - dl * Se[2]]), Qe = cross3(Se, Ln)
   const inc = 5.1 * d2r, Qm = [0, 1, 2].map((i) => Qe[i] * Math.cos(inc) + Ln[i] * Math.sin(inc))
   const path = []
   for (let k = 0; k < 120; k++) { const ph = 2 * Math.PI * k / 120, c = Math.cos(ph), s2 = Math.sin(ph); path.push([W / 2 + orb * (c * Se[0] + s2 * Qm[0]) * Re, H / 2 + orb * (c * Se[1] + s2 * Qm[1]) * Re]) }
-  const cell = 3 * u, nx = Math.floor(W / cell), ny = Math.floor(H / cell), inset = 0.1 * H, clr = 0.14 * H + 2.2 * u, ecl = Re + 0.1 * H + 2.2 * u
-  const ok = new Uint8Array(nx * ny)
+  const cell = 3 * u, nx = Math.floor(W / cell), ny = Math.floor(H / cell), inset = (tight ? 0.03 : 0.1) * H, clr = 0.14 * H + 2.2 * u, ecl = Re + (tight ? 0.035 : 0.1) * H + 2.2 * u
+  const ok = new Uint8Array(nx * ny), Rc = 0.22 * H   // Rc: the widget's rounded-corner radius; sparkles keep inside it
   for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
     const X = (i + 0.5) * cell, Y = (j + 0.5) * cell
     if (X - cell / 2 < inset || X + cell / 2 > W - inset || Y - cell / 2 < inset || Y + cell / 2 > H - inset) continue
+    if (tight) { const ex2 = Math.max(0, Math.abs(X - W / 2) - (W / 2 - inset - Rc)), ey2 = Math.max(0, Math.abs(Y - H / 2) - (H / 2 - inset - Rc)); if (Math.hypot(ex2, ey2) > Rc) continue }
     if (Math.hypot(X - W / 2, Y - H / 2) < ecl) continue
     let near = false
-    for (let k = 0; k < 120; k++) if (Math.hypot(path[k][0] - X, path[k][1] - Y) < clr) { near = true; break }
+    if (!tight) for (let k = 0; k < 120; k++) if (Math.hypot(path[k][0] - X, path[k][1] - Y) < clr) { near = true; break }   // the named stars keep clear of the whole Moon path; the tiny sparkles only of the Moon itself (checked per sparkle)
     if (!near) ok[j * nx + i] = 1
   }
-  return { ok, cell, nx, ny }
+  const res = { ok, cell, nx, ny, mo: { Se, Qm, Re, orb } }
+  if (tight) {                                            // the sky cut into blocks of about 0.2 H, so sparkles can be spread evenly: every block gets a share of the sparkles in proportion to its free area
+    const bw = med ? 9 : 5, bh = 5, blocks = []
+    for (let b = 0; b < bw * bh; b++) blocks.push([])
+    for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) if (ok[j * nx + i]) blocks[Math.min(bh - 1, Math.floor((j + 0.5) * cell / H * bh)) * bw + Math.min(bw - 1, Math.floor((i + 0.5) * cell / W * bw))].push([i, j])
+    res.blocks = blocks
+  }
+  return res
+}
+function moonXY(mo, W, H, tms) {                      // where the Moon is drawn at scene time tms (same maths as drawDrift)
+  const hrs = ((tms - prevReset.getTime()) / 3600000 % T_HRS + T_HRS) % T_HRS, phi = 0.9 + 2 * Math.PI * hrs / T_HRS, cp = Math.cos(phi), sp = Math.sin(phi)
+  return [W / 2 + mo.orb * (cp * mo.Se[0] + sp * mo.Qm[0]) * mo.Re, H / 2 + mo.orb * (cp * mo.Se[1] + sp * mo.Qm[1]) * mo.Re]
 }
 function wanderPos(W, H, family, u) {
   try {
@@ -1922,47 +1938,80 @@ function wanderPos(W, H, family, u) {
 }
 // ---- sparkles: a few tiny white pinpoints that twinkle in and out and re-seed every ~13 min, so they read as wallpaper dust and never as countdown stars ----
 // Positions are a pure function of the clock. Each sparkle lives in its own staggered 13-min slot: it fades in, peaks mid-slot, fades out, and the next slot picks a new free spot while it is invisible.
-// They stay in the free sky (off the edges and corners, away from Earth + glare and the Moon's path), keep clear of the 7 named stars and of each other, and are far smaller, whiter and dimmer than any lit star.
-const SPARK_SLOT = 780000, SPARK_LV = [0.28, 0.42, 0.58, 0.74, 0.9]   // slot length (ms); peak opacity per brightness level (a lit star core is ~1.0)
-const SPARK_MEM = {}                                                  // tiny sprites, built once per run in memory: [level, glint] -> image (a handful of 3x3 / 7x7 images, nothing is written to disk)
-function sparkSprite(lv, glint) {
-  const key = lv + (glint ? "g" : "d")
+// They are spread evenly over the whole sky (the sky is cut into blocks, each sparkle owns one block in proportion to its free area), may sit close to the edges (inside the rounded corners) and in Earth's faint glare, but keep off Earth, the Moon itself, the 7 named stars (>= 0.09 H) and each other, and are far smaller, whiter and dimmer than any lit star.
+// Every sparkle is mixed from three independent picks, all hard-capped far below a lit named star:
+//   size  (core sigma, device px): 0 micro .45, 1 small .7, 2 medium 1.0, 3 larger 1.4 (FWHM 1.1 to 3.3 px; a lit star core is ~5.6 px across)
+//   glow  0 none / crisp, 1 soft halo (2.6x the core, 50% of the core peak), 2 wide faint glow (4.5x the core, 25% of the core peak)
+//   cross 0/1: a very faint 4-point glint (arms at most 40% of the centre), only on the smaller, crisper sparkles
+// Peak opacity is capped per size (SPARK_CAP, max 0.55 against ~0.98 for the dimmest lit star core), the glow is part of that peak (the centre is normalised, so core + glow never exceeds the cap),
+// and the sprite is clipped to 11 px across (SPARK_MAXN) against 15-24 px of visible core + halo for a lit star. So no sparkle, glow included, can match or beat a named star at any moment.
+const SPARK_SIG = [0.45, 0.7, 1, 1.4], SPARK_CAP = [0.55, 0.5, 0.45, 0.4], SPARK_GA = [0, 0.5, 0.25], SPARK_GS = [0, 2.6, 4.5], SPARK_LV = [0.45, 0.6, 0.75, 0.88, 1], SPARK_MAXN = 11, SPARK_STR_A = 1.5, SPARK_STR_R = 1.2, SPARK_PEAK = 0.6   // SPARK_PEAK: no sparkle pixel is ever more opaque than this (a lit star core is ~0.98)
+const SPARK_MEM = {}                                                  // tiny sprites, built once per run in memory and only for the combinations that are drawn (at most 15x15 px, nothing is written to disk)
+function sparkSprite(size, glow, cross, lv, st) {   // st = 1: a slightly stronger glow (1.5x the glow alpha, 1.2x its radius), same core
+  const key = size + "-" + glow + "-" + cross + "-" + lv + "-" + st
   if (SPARK_MEM[key]) return SPARK_MEM[key]
-  const N = glint ? 7 : 3, c0 = (N - 1) / 2, px = new Uint8Array(N * N * 4), a = SPARK_LV[lv]
+  const sg = SPARK_SIG[size], gs = sg * SPARK_GS[glow] * (st ? SPARK_STR_R : 1), ga0 = SPARK_GA[glow], ga = ga0 * (st ? SPARK_STR_A : 1)
+  const a = SPARK_CAP[size] * SPARK_LV[lv] * Math.min(1, SPARK_PEAK / (SPARK_CAP[size] * SPARK_LV[lv] * (1 + ga) / (1 + ga0)))   // the core keeps its alpha; the stronger glow lifts the centre a little, never past SPARK_PEAK
+  let N = 2 * Math.ceil(Math.max(2.5 * sg, glow ? 2.2 * gs : 0, cross ? 3 : 0)) + 1; N = Math.max(3, Math.min(SPARK_MAXN, N))
+  const c0 = (N - 1) / 2, px = new Uint8Array(N * N * 4)
   for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
-    const dx = i - c0, dy = j - c0, r2 = dx * dx + dy * dy
-    let v = Math.exp(-0.5 * r2 / 0.5)                               // a ~1-pixel dot, a faint 1-pixel skirt
-    if (glint && (dx === 0 || dy === 0) && r2 > 0) v = Math.max(v, 0.3 * Math.exp(-0.45 * (Math.sqrt(r2) - 1)) * (r2 > 4 ? 0.55 : 1))   // a very faint 4-point glint, 3 px each way
+    const dx = i - c0, dy = j - c0, r2 = dx * dx + dy * dy, rr = Math.sqrt(r2)
+    let v = Math.exp(-0.5 * r2 / (sg * sg))
+    if (glow) v += ga * Math.exp(-0.5 * r2 / (gs * gs))
+    v /= 1 + ga0                                                       // the core amplitude is what it was without the boost; only the glow grows (the centre is capped at SPARK_PEAK above)
+    if (cross && (dx === 0 || dy === 0) && r2 > 0) v = Math.max(v, 0.4 * Math.exp(-0.45 * (rr - 1)) * (r2 > 4 ? 0.55 : 1))
+    const edge = 1 - sstep(0.7, 1, rr / (N / 2))                      // the glow fades to nothing before the sprite edge, no box
     const q = (j * N + i) * 4
-    px[q] = 248; px[q + 1] = 250; px[q + 2] = 255; px[q + 3] = Math.min(255, Math.round(a * v * 255))
+    px[q] = 248; px[q + 1] = 250; px[q + 2] = 255; px[q + 3] = Math.min(255, Math.round(Math.min(SPARK_PEAK, a * v * edge) * 255))
   }
   SPARK_MEM[key] = { img: pngFromRGBA(px, N, N), N }
   return SPARK_MEM[key]
 }
+function segDist(ax, ay, bx, by, cx, cy, dx, dy) {   // smallest distance between segments AB and CD (2-D)
+  const sd = (px, py, x0, y0, x1, y1) => { const vx = x1 - x0, vy = y1 - y0, l2 = vx * vx + vy * vy, t = l2 ? Math.max(0, Math.min(1, ((px - x0) * vx + (py - y0) * vy) / l2)) : 0; return Math.hypot(px - x0 - t * vx, py - y0 - t * vy) }
+  const o = (px, py, qx, qy, rx, ry) => (qx - px) * (ry - py) - (qy - py) * (rx - px)
+  if (o(ax, ay, bx, by, cx, cy) * o(ax, ay, bx, by, dx, dy) < 0 && o(cx, cy, dx, dy, ax, ay) * o(cx, cy, dx, dy, bx, by) < 0) return 0
+  return Math.min(sd(ax, ay, cx, cy, dx, dy), sd(bx, by, cx, cy, dx, dy), sd(cx, cy, ax, ay, bx, by), sd(dx, dy, ax, ay, bx, by))
+}
 function sparkles(ctx, W, H, family, u, P) {
   try {
-    const med = family === "medium", NS = med ? 22 : 14, fs = freeSky(W, H, med, u), { ok, cell, nx, ny } = fs, ms = now.getTime(), sc = Device.screenScale()
+    const med = family === "medium", NS = med ? 52 : 26, fs = freeSky(W, H, med, u, true), { ok, cell, nx, ny, mo, blocks } = fs, ms = now.getTime(), sc = Device.screenScale()
     const cells = []; for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) if (ok[j * nx + i]) cells.push([i, j])
     if (!cells.length) return
-    const dStar = 0.11 * H, dSp = 0.04 * H, placed = []
+    const dStar = 0.09 * H, dSp = 0.03 * H, dMoon = 0.2727 * mo.Re + 0.05 * H, placed = []
+    let tot = 0; const cum = blocks.map((b) => (tot += b.length))   // sparkle j lives in one fixed block of the sky (golden-ratio order, in proportion to free area): evenly spread by construction
+    const blockOf = (j) => { const q = ((j + 0.5) * 0.6180339887 + 0.137) % 1 * tot; let b = 0; while (b < cum.length - 1 && cum[b] <= q) b++; return b }
     for (let j = 0; j < NS; j++) {
-      const off = sn2(j, 3, 8101) * SPARK_SLOT, t = ms + off, k = Math.floor(t / SPARK_SLOT), ph = t / SPARK_SLOT - k
+      const SL = (420 + 480 * sn2(j, 4, 8110)) * 1000, off = sn2(j, 3, 8101) * SL, t = ms + off, k = Math.floor(t / SL), ph = t / SL - k   // each sparkle has its own life: 7-15 min
       if (sn2(k, j, 8102) < 0.08) continue                           // a slot now and then stays dark: the sky is never the same twice
       const env = sstep(0, 0.3, ph) * (1 - sstep(0.7, 1, ph)),   // fade in, hold, fade out: invisible at both slot edges, so the jump to a new spot is never seen
-         bri = 0.6 + 0.4 * sn2(k, j, 8103), v = env * bri
-      let x = 0, y = 0, got = false
-      for (let a = 0; a < 14 && !got; a++) {
-        const c = cells[Math.floor(sn2(k, j * 31 + a, 8104) * cells.length)]
-        x = (c[0] + 0.15 + 0.7 * sn2(k, j * 31 + a, 8105)) * cell; y = (c[1] + 0.15 + 0.7 * sn2(k, j * 31 + a, 8106)) * cell
+         bri = 0.5 + 0.5 * sn2(k, j, 8103), flick = 0.82 + 0.18 * Math.sin(2 * Math.PI * (t / 1000) / (90 + 240 * sn2(j, 5, 8112)) + 6.28 * sn2(j, 6, 8113)), v = Math.min(1, env * bri * flick)   // its own twinkle: a shimmer of 1.5-5.5 min on top of the fade
+      let x = 0, y = 0, mx = 0, my = 0, ddx = 0, ddy = 0, got = false
+      let nbl = null
+      const bl = blocks[blockOf(j)], moon = moonXY(mo, W, H, Math.floor((k * SL - off) / 600000) * 600000)   // the Moon as drawn during this sparkle's slot
+      for (let a = 0; a < 40 && !got; a++) {
+        if (a === 24 && !nbl) { nbl = []; const bw2 = med ? 9 : 5, b0 = blockOf(j), bx0 = b0 % bw2, by0 = Math.floor(b0 / bw2); for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const bx = bx0 + dx, by = by0 + dy; if (bx >= 0 && bx < bw2 && by >= 0 && by < 5 && (dx || dy)) for (const c2 of blocks[by * bw2 + bx]) nbl.push(c2) } }   // too crowded here: try the neighbouring blocks before the whole sky
+        const pool = a < 24 && bl.length ? bl : a < 34 && nbl && nbl.length ? nbl : cells, c = pool[Math.floor(sn2(k, j * 31 + a, 8104) * pool.length)]
+        mx = (c[0] + 0.15 + 0.7 * sn2(k, j * 31 + a, 8105)) * cell; my = (c[1] + 0.15 + 0.7 * sn2(k, j * 31 + a, 8106)) * cell
+        const ang = 2 * Math.PI * sn2(k, j * 31 + a, 8108), dist = (0.045 + 0.04 * sn2(k, j * 31 + a, 8109)) * H * (a < 12 ? 1 : a < 26 ? 0.7 : 0.45)   // each sparkle drifts slowly in a straight, gentle line: 8-14 pt over its life
+        ddx = Math.cos(ang) * dist; ddy = Math.sin(ang) * dist
         got = true
-        for (const p of P) if (Math.hypot(p[0] - x, p[1] - y) < dStar) { got = false; break }
-        if (got) for (const p of placed) if (Math.hypot(p[0] - x, p[1] - y) < dSp) { got = false; break }
+        for (const q of [-0.5, -0.25, 0, 0.25, 0.5]) {                // the whole path, not just the start, must stay in the free sky and clear of every named star
+          const px2 = mx + ddx * q, py2 = my + ddy * q, ci = Math.floor(px2 / cell), cj = Math.floor(py2 / cell)
+          if (ci < 0 || cj < 0 || ci >= nx || cj >= ny || !ok[cj * nx + ci]) { got = false; break }
+          for (const p of P) if (Math.hypot(p[0] - px2, p[1] - py2) < dStar) { got = false; break }
+          if (got && Math.hypot(moon[0] - px2, moon[1] - py2) < dMoon) got = false
+          if (!got) break
+        }
+        if (got) for (const p of placed) if (segDist(p[0] - p[2] / 2, p[1] - p[3] / 2, p[0] + p[2] / 2, p[1] + p[3] / 2, mx - ddx / 2, my - ddy / 2, mx + ddx / 2, my + ddy / 2) < dSp) { got = false; break }   // whole drift lines, not just midpoints: two sparkles can never meet, whatever moment it is
       }
+      x = mx + ddx * (ph - 0.5); y = my + ddy * (ph - 0.5)
       if (!got) continue
-      placed.push([x, y])                                            // reserve the spot even while it is faint, so spots never swap places
+      placed.push([mx, my, ddx, ddy])                                            // reserve the spot even while it is faint, so spots never swap places
       const lv = Math.floor(v * 5.2); if (lv < 0 || v < 0.12) continue
-      const L = Math.min(4, lv), glint = sn2(k, j, 8107) < 0.28 && L >= 3
-      const sp = sparkSprite(L, glint), d = sp.N / SPR, cx = (Math.floor(x * sc) + 0.5) / sc, cy = (Math.floor(y * sc) + 0.5) / sc
+      const L = Math.min(4, lv), sr = sn2(k, j, 8107), gr = sn2(k, j, 8114), cr = sn2(k, j, 8115)
+      const size = sr < 0.28 ? 0 : sr < 0.58 ? 1 : sr < 0.84 ? 2 : 3, glow = gr < 0.4 ? 0 : gr < 0.75 ? 1 : 2, cross = cr < 0.16 && size <= 1 && glow <= 1 && L >= 2 ? 1 : 0   // mixed at random per sparkle and per life
+      const st = glow && sn2(k, j, 8116) < 0.5 ? 1 : 0, sp = sparkSprite(size, glow, cross, L, st), d = sp.N / SPR, cx = (Math.floor(x * sc) + 0.5) / sc, cy = (Math.floor(y * sc) + 0.5) / sc
       ctx.drawImageInRect(sp.img, new Rect(cx - d / 2, cy - d / 2, d, d))
     }
   } catch (err) { console.log("sparkles skipped: " + err) }
@@ -1977,10 +2026,10 @@ function dayDots(ctx, W, H, family, u) {
   for (let i = 0; i < CYCLE_DAYS; i++) {
     const [x, y] = P[i], last = i === CYCLE_DAYS - 1, on = starLit(i), g = u * (big ? 1.3 : 1.1) * STAR_PH[i][1], g0 = STAR_PH[i][1]
     let ks = 1
-    if (on && BOOST > 0.01) {                                   // survivors brighten as the others go out: a tighter, hotter core and halo on the cached sprite, still a point
-      aura(ctx, x, y, mixHex(DAY_STARS[i][0], "#FFFFFF", 0.4), (big ? 5 : 4.2) * u * g0 * (0.8 + 0.4 * BOOST), 0.07 + 0.2 * BOOST, 0, 0)
-      aura(ctx, x, y, "#FFFFFF", (big ? 2.2 : 1.9) * u * g0 * (0.8 + 0.3 * BOOST), 0.32 * BOOST, 0, 0)
-      ks = 1 + 0.25 * BOOST
+    if (on && STEP > 0) {                                       // each star that goes out makes every survivor one clear step brighter and bigger (7 lit = 1.0x, 1 lit = the brightest): a hotter, wider core and halo on top of the cached sprite, still a crisp point
+      aura(ctx, x, y, mixHex(DAY_STARS[i][0], "#FFFFFF", 0.35), (big ? 5 : 4.2) * u * g0 * (1 + 0.1 * STEP), 0.03 + 0.055 * STEP, 0, 0)
+      aura(ctx, x, y, "#FFFFFF", (big ? 2.1 : 1.8) * u * g0 * (1 + 0.07 * STEP), 0.085 * STEP, 0, 0)
+      ks = 1 + 0.075 * STEP                                     // the sprite itself is drawn bigger: core radius and halo both scale (1.0x .. 1.45x)
     }
     if (PULSE !== 0 && on) aura(ctx, x, y, mixHex(DAY_STARS[i][0], "#FFFFFF", 0.35), 4.5 * g, 0.16 * (0.5 + 0.5 * PULSE), 0, 0)   // the final-hour breath: all stars glow together, a tight halo and no size change, so the cores stay sharp
     if (on && SWELL > 0.01) {                                   // brighter and a little bigger, still a crisp point: a tight bright core on top of the scaled sprite, plus a faint small halo
