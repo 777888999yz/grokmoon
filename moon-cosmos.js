@@ -1588,14 +1588,14 @@ function drawDrift(ctx, W, H, family, u) {
   const ex = W / 2, ey = H / 2                       // Earth is dead centre of the widget; the Moon's orbit is centred on it
   const Se = EM_SUN
   const L0 = [-0.2, -0.8, 0.55], dl = dot3(L0, Se), Ln = unit3v([L0[0] - dl * Se[0], L0[1] - dl * Se[1], L0[2] - dl * Se[2]])   // ecliptic north, perpendicular to the Sun line
-  const Qe = cross3(Ln, Se)
+  const Qe = cross3(Se, Ln)                          // ecliptic east at the Sun: the direction the Sun and Moon move, counter-clockwise seen from north (the screen axes are left-handed, so it is Se x Ln, not Ln x Se)
   const inc = 5.1 * d2r, Qm = [0, 1, 2].map((i) => Qe[i] * Math.cos(inc) + Ln[i] * Math.sin(inc))       // Moon's orbit is inclined 5.1 degrees
   const phi = 0.9 + 2 * Math.PI * hrs / T_HRS, cp = Math.cos(phi), sp = Math.sin(phi)
   const M = [0, 1, 2].map((i) => orb * (cp * Se[i] + sp * Qm[i]))                                      // phi = 0 is new moon (Moon toward the Sun), pi is full
   const Lm = unit3v([Se[0] * 60 - M[0], Se[1] * 60 - M[1], Se[2] * 60 - M[2]])                           // the Sun is far away: its direction at the Moon is the same
   const mx = ex + M[0] * Re, my = ey + M[1] * Re
   // orientations: Moon is tidally locked (near side toward Earth, pole along the orbit normal); Earth turns west to east, tilted 23.44 deg from the ecliptic normal
-  const Mn = unit3v(cross3(Se, Qm)), dE = unit3v([-M[0], -M[1], -M[2]])
+  const Mn = unit3v(cross3(Qm, Se)), dE = unit3v([-M[0], -M[1], -M[2]])
   const MBy = [-Mn[0], -Mn[1], -Mn[2]]
   // libration: the Moon's near side is not fixed. Over one lap it nods in longitude (about 7.5 deg, from its eccentric orbit) and in latitude (about 6.7 deg, from its tilted axis), so the sub-Earth point wanders around (0, 0).
   const psi = 2 * Math.PI * hrs / T_HRS, libL = (6.29 * Math.sin(psi + 0.7) + 1.27 * Math.sin(2 * psi + 1.9)) * d2r, libB = (6.7 * Math.sin(psi + 2.1) + 0.4 * Math.sin(2 * psi)) * d2r
@@ -1620,7 +1620,7 @@ function drawDrift(ctx, W, H, family, u) {
     if (SG_GLOW) {                                                       // Singapore marker: a tiny hot white core in a soft reddish halo, round, no spikes; only on the visible hemisphere
       const la = 1.35 * d2r, v = bodyToView([0, -Math.sin(la), Math.cos(la)], earthO), vis = sstep(0.1, 0.5, v[2])
       if (vis > 0.01) {
-        const day = sstep(-0.1, 0.25, dot3(v, Se)), k = vis * (1 - 0.5 * day)   // gentler on the day side
+        const day = sstep(-0.1, 0.25, dot3(v, Se)), k = vis * (1 - day)   // a city light: only on the night side
         const gx = ex + v[0] * Re, gy = ey + v[1] * Re, sq = 0.45 + 0.55 * v[2]    // the halo is squashed a little toward the limb
         for (let i = 0; i < 9; i++) {
           const f = 1 - i / 9, r = 3.0 * u * f * f * 0.9 + 0.5 * u
@@ -1760,20 +1760,22 @@ const DAY_STARS = [
   ["#9CBBFF", 2.6, 9.0, 1]        // R136a1: most massive known star, ~46,000 K: the most intense blue-white, the biggest
 ]
 // The 7 day-stars zig-zag across the widget, alternating the top and bottom band from left to right (a loose, jittered path of the week, clear of Earth, its Moon orbit and the edges). Positions are fractions of the widget [x, y].
-// Lit stars = the day of the week: a star is fully lit from the moment its day starts and stays lit until the weekly reset; stars for days to come are only a tiny faint dot.
+// Countdown: all 7 stars are lit after the weekly reset and one goes out each day (R136a1 first, Proxima last): lit stars = days left. A star that has gone out is only a tiny faint dot.
 const STAR_POS = {
   small: [[0.14, 0.16], [0.28, 0.87], [0.40, 0.12], [0.53, 0.88], [0.62, 0.14], [0.75, 0.86], [0.84, 0.17]],     // zig-zag week: days alternate top / bottom band, left to right, jittered; inset so halos stay clear of the rounded corners (every star >= 0.12 from an edge, >= 0.16 from the Moon's path)
   medium: [[0.08, 0.15], [0.21, 0.87], [0.35, 0.11], [0.52, 0.91], [0.69, 0.09], [0.82, 0.86], [0.90, 0.16]]
 }
-// The number of lit stars is the day of the week: day 1 (the first 24 h after the weekly reset) lights star 1, day 2 stars 1-2, ... day 7 all seven. A star is fully lit from the moment its day starts; the rest are only a tiny, very faint dot.
-function starLit(i) { return (now.getTime() - prevReset.getTime()) / 3600000 >= 24 * i }
+// Countdown: the number of lit stars is the number of days left: all 7 right after the weekly reset, one fewer each day (R136a1 goes out first, Proxima last). A star that has gone out is a tiny faint dot; the survivors get brighter as the others go out.
+function starLit(i) { return i <= CYCLE_DAYS - 1 - Math.min(CYCLE_DAYS - 1, Math.floor((now.getTime() - prevReset.getTime()) / 86400000)) }   // countdown: all 7 stars are lit right after the reset, then one goes out each day (R136a1 first, Proxima last), so the lit count is the number of days left
 // ---- reset-hour effects: all drawn at draw time (scaled cached sprites + small in-memory glow images), so they never touch the cached star sprites ----
 const SINCE_MS = now.getTime() - prevReset.getTime(), SINCE_MIN = SINCE_MS / 60000
 const FIN = lastHour ? 1 - leftMs / 3600000 : 0                     // 0..1 through the final hour before the reset
-const FLARE = FIN > 0 ? sstep(0.4, 1, FIN) : SINCE_MIN < 30 ? 1 - sstep(0, 30, SINCE_MIN) : 0   // R136a1 swells towards the reset (peak = 1 at the reset), then settles over ~30 min
+const SWELL = leftMs <= 10800000 ? Math.pow(1 - leftMs / 10800000, 2.2) : SINCE_MIN < 30 ? 1 - sstep(0, 30, SINCE_MIN) : 0   // 0..1: the lone last star swells over the final 3 h (ease-in, peak = 1 at the reset); at the reset all 7 relight together and the swell settles over ~30 min
+const LIT_N = CYCLE_DAYS - Math.min(CYCLE_DAYS - 1, Math.floor(SINCE_MS / 86400000))   // stars still lit: 7 right after the reset, 1 on the last day
+const BOOST = (CYCLE_DAYS - LIT_N) / (CYCLE_DAYS - 1)              // 0 with 7 lit .. 1 with 1 lit: each star that goes out makes the survivors a step brighter (and a touch bigger), applied at draw time
+const SWELL_K = 0.7                                                  // size at the peak = 1 + SWELL_K, the same for every star
 const PULSE_PERIOD = 780                                            // seconds per breath (13 min): slower than the ~10 min refresh, so each refresh lands on a different phase
 const PULSE = FIN > 0 ? sstep(0, 0.1, FIN) * Math.sin(2 * Math.PI * (now.getTime() / 1000) / PULSE_PERIOD) : 0   // -1..1, the same for all 7 stars
-const HAZE = SINCE_MS / 3600000 >= 144 ? clamp((SINCE_MS / 3600000 - 144) / 24, 0, 1) : FLARE   // faint blue haze round R136a1 builds across day 7 (and fades with the flare after the reset)
 let AURA_W = 1e9, AURA_H = 1e9                                     // widget size in points, set per render
 function aura(ctx, x, y, hex, R, amp, wob, seed) {                  // a soft round glow: one small RGBA image built in memory per draw (dithered, no banding)
   if (!(amp > 0.004) || !(R > 2)) return
@@ -1793,7 +1795,7 @@ function aura(ctx, x, y, hex, R, amp, wob, seed) {                  // a soft ro
   } catch (err) { console.log("aura skipped: " + err) }
 }
 // per star: [brightness weight, size]; the colours come from DAY_STARS
-const STAR_PH = [[1, 1], [1, 1], [0.95, 1], [0.95, 1.05], [1, 1.05], [0.95, 1.05], [1.25, 1.3]]
+const STAR_PH = [[1.25, 1.05], [1, 1], [0.95, 1], [0.95, 1.05], [1, 1.05], [0.95, 1.05], [1.25, 1.3]]
 const SPR = Math.max(2, Math.round(Device.screenScale()))   // star sprite pixels per point: one sprite pixel is one device pixel, so the cores stay crisp
 function sn2(ix, iy, s) { let h = (Math.imul(ix, 374761393) + Math.imul(iy, 668265263) + Math.imul(s, 2246822519)) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296 }
 function sv2(x, y, s) {                                // smooth 2D value noise
@@ -1852,11 +1854,11 @@ function vn1(t, sd) { const k = Math.floor(t), f = t - k, w = f * f * (3 - 2 * f
 function wnoise(hrs, per, sd) { const n = 0.82 * vn1(hrs / per, sd) + 0.18 * vn1(hrs / (per * 0.45) + 11, sd + 50); return clamp(0.5 + (n - 0.5) * 1.5, 0, 1) }
 function freeSky(W, H, med, u) {
   const Re = (med ? 48 : 35) * u, orb = med ? 1.9 : 1.8, Se = EM_SUN
-  const L0 = [-0.2, -0.8, 0.55], dl = dot3(L0, Se), Ln = unit3v([L0[0] - dl * Se[0], L0[1] - dl * Se[1], L0[2] - dl * Se[2]]), Qe = cross3(Ln, Se)
+  const L0 = [-0.2, -0.8, 0.55], dl = dot3(L0, Se), Ln = unit3v([L0[0] - dl * Se[0], L0[1] - dl * Se[1], L0[2] - dl * Se[2]]), Qe = cross3(Se, Ln)
   const inc = 5.1 * d2r, Qm = [0, 1, 2].map((i) => Qe[i] * Math.cos(inc) + Ln[i] * Math.sin(inc))
   const path = []
   for (let k = 0; k < 120; k++) { const ph = 2 * Math.PI * k / 120, c = Math.cos(ph), s2 = Math.sin(ph); path.push([W / 2 + orb * (c * Se[0] + s2 * Qm[0]) * Re, H / 2 + orb * (c * Se[1] + s2 * Qm[1]) * Re]) }
-  const cell = 3 * u, nx = Math.floor(W / cell), ny = Math.floor(H / cell), inset = 0.1 * H, clr = 0.14 * H + 1.7 * u, ecl = Re + 0.1 * H
+  const cell = 3 * u, nx = Math.floor(W / cell), ny = Math.floor(H / cell), inset = 0.1 * H, clr = 0.14 * H + 2.2 * u, ecl = Re + 0.1 * H + 2.2 * u
   const ok = new Uint8Array(nx * ny)
   for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
     const X = (i + 0.5) * cell, Y = (j + 0.5) * cell
@@ -1916,16 +1918,18 @@ function dayDots(ctx, W, H, family, u) {
   const pos = STAR_POS[family === "medium" ? "medium" : "small"]
   const big = family !== "medium", P = wanderPos(W, H, family, u) || pos.map((p) => [W * p[0], H * p[1]])   // wandering stars; the fixed zig-zag layout below is only the fallback
   for (let i = 0; i < CYCLE_DAYS; i++) {
-    const [x, y] = P[i], last = i === CYCLE_DAYS - 1, on = starLit(i), g = u * (big ? 1.3 : 1.1) * STAR_PH[i][1]
+    const [x, y] = P[i], last = i === CYCLE_DAYS - 1, on = starLit(i), g = u * (big ? 1.3 : 1.1) * STAR_PH[i][1], g0 = STAR_PH[i][1]
     let ks = 1
+    if (on && BOOST > 0.01) {                                   // survivors brighten as the others go out: a tighter, hotter core and halo on the cached sprite, still a point
+      aura(ctx, x, y, mixHex(DAY_STARS[i][0], "#FFFFFF", 0.4), (big ? 5 : 4.2) * u * g0 * (0.8 + 0.4 * BOOST), 0.07 + 0.2 * BOOST, 0, 0)
+      aura(ctx, x, y, "#FFFFFF", (big ? 2.2 : 1.9) * u * g0 * (0.8 + 0.3 * BOOST), 0.32 * BOOST, 0, 0)
+      ks = 1 + 0.25 * BOOST
+    }
     if (PULSE !== 0 && on) aura(ctx, x, y, mixHex(DAY_STARS[i][0], "#FFFFFF", 0.35), 4.5 * g, 0.16 * (0.5 + 0.5 * PULSE), 0, 0)   // the final-hour breath: all stars glow together, a tight halo and no size change, so the cores stay sharp
-    if (last && on) {
-      if (HAZE > 0.01) aura(ctx, x, y, "#4F7DFF", (big ? 8 : 7) * u * (0.7 + 0.5 * HAZE) + 4 * u * FLARE, 0.12 * Math.pow(HAZE, 1.15), 0.3, 5)   // a small blue haze that grows through day 7
-      if (FLARE > 0.01) {
-        aura(ctx, x, y, "#9CBBFF", (big ? 7 : 6) * u * (0.8 + 0.4 * FLARE), 0.2 * FLARE, 0.15, 9)
-        aura(ctx, x, y, "#E6EEFF", (big ? 3.5 : 3) * u * (0.8 + 0.4 * FLARE), 0.4 * FLARE, 0, 0)
-      }
-      ks = 1 + 0.25 * FLARE                                     // a modest final-hour swell
+    if (on && SWELL > 0.01) {                                   // brighter and a little bigger, still a crisp point: a tight bright core on top of the scaled sprite, plus a faint small halo
+      aura(ctx, x, y, mixHex(DAY_STARS[i][0], "#FFFFFF", 0.45), (big ? 6 : 5) * u * g0 * (0.7 + 0.5 * SWELL), 0.16 * SWELL, 0, 0)
+      aura(ctx, x, y, "#FFFFFF", (big ? 2.6 : 2.2) * u * g0 * (0.8 + 0.4 * SWELL), 0.45 * SWELL, 0, 0)
+      ks *= 1 + SWELL_K * SWELL
     }
     dayStar(ctx, x, y, i, on, u, big, ks)
   }
@@ -1998,7 +2002,7 @@ function buildWidget(family) {
   w.backgroundImage = render(fam, W, H, bg)
   // random 1-5 min refresh (iOS may still refresh less often); every minute in the last hour
   const toSlot = ROTATE_MINUTES > 0 ? ROTATE_MINUTES * 60000 - (now.getTime() % (ROTATE_MINUTES * 60000)) + 2000 : 1e12
-  const step = Math.min(toSlot, lastHour ? 60000 : (60 + Math.floor(Math.random() * 241)) * 1000)
+  const step = Math.min(toSlot, lastHour ? 60000 : SWELL > 0 ? 120000 : (60 + Math.floor(Math.random() * 241)) * 1000)
   if (TAP_URL) w.url = TAP_URL
   w.refreshAfterDate = new Date(Math.min(now.getTime() + step, nextReset.getTime() + 5000))
   return w
