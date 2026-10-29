@@ -1,4 +1,4 @@
-// Mister 14 · Fitness Quest widget · v3 (the medals build the Milky Way: no medals = dark sky; Train | Cook bar, chaos blood theme)
+// Mister 14 · Fitness Quest widget · v9 (badges + medals build the Milky Way, 8 realistic astrophotography star designs per tier + realistic chaos looks, random-but-stable, twinkle + milestone flare: no medals = dark sky; Train | Cook bar, chaos blood theme)
 // Scriptable · small + medium · built-in galaxy background drawn live (no setup needed)
 //
 // SETUP: run this script once in the Scriptable app, then add a small Scriptable widget to your
@@ -37,7 +37,7 @@ const SNAPSHOT = {
   xp: 16145, rank: "Black Dragon", rankIcon: "🖤", level: 9,
   next: "Gold Tiger King", xpIn: 3145, xpNeed: 5000,
   exercise: 7, cooking: 7, savings: 0.01,
-  badges: 48, prismatic: 1, diamond: 0, gold: 0,
+  badges: 47, prismatic: 1, diamond: 0, gold: 0,
   trainToday: 0, cookToday: 0,                                  // today's quest (Widget tab)
   chaosState: "clear", chaosCover: 0, chaosNames: "",           // chaos lock: worst uncleansed medal type, tiers restricted (0-5), their names
   chaosTierNames: "LIFE360|DISCORD|5555 Number|YOUTRIP|All Messaging Platforms", cleansedMedals: 0,
@@ -67,7 +67,7 @@ const cachePath = fm.joinPath(fm.documentsDirectory(), "grok-fitness-stats.json"
 const now = new Date()
 // live render state, filled from the Widget-tab stats in buildWidget() (replaces the preview-only mocks)
 let __BAND = null, __STAR_DRAW = null                   // galaxy band geometry + the deferred medal-star pass (set per render)
-const LIVE = { chaos: null, sky: {}, quest: { train: false, cook: false }, reason: { xp: 0, cleansed: 0 } }
+const LIVE = { flare: 0, chaos: null, sky: {}, quest: { train: false, cook: false }, reason: { xp: 0, cleansed: 0 } }
 
 // ---------------- helpers ----------------
 function clamp(v, a, b) { return Math.min(b, Math.max(a, v)) }
@@ -1317,54 +1317,255 @@ function medalCoins(n) {                                // 133 -> {100:1, 10:3, 
 // how much Milky Way the medals have built: 0 → plain dark sky, 33 → a band forming, ~130-200 → the full galaxy
 const GAL_GROW_K = 70
 const galaxyGrowth = (n) => n > 0 ? 1 - Math.exp(-n / GAL_GROW_K) : 0
-function medalTotal(s) {                                // optional medalsTotal key → gold + diamond + prismatic from the Widget tab
+// the galaxy counts ALL badges + medals (chaos and N/A medals are excluded by the sheet): badges key + (optional medalsTotal, else gold + diamond + prismatic)
+const nz = (v) => { const n = Number(v); return isFinite(n) && n > 0 ? Math.floor(n) : 0 }
+function medalTotal(s) {
   if (!s) return 0
-  if (s.medalsTotal != null) return s.medalsTotal
-  return (s.gold || 0) + (s.diamond || 0) + (s.prismatic || 0)
+  const medals = s.medalsTotal != null ? nz(s.medalsTotal) : nz(s.gold) + nz(s.diamond) + nz(s.prismatic)
+  return nz(s.badges) + medals
 }
-// one medal star, drawn like astrophotography: a soft Gaussian point spread + faint bloom, thin fading 4-point diffraction spikes (big and superior;
-// barely-there on small), no outlines or rings. d = 0 (speck) · 1 (small) · 10 (big) · 100 (superior). Neutral warm white with a whisper of gold;
-// temp (0..1) nudges the colour temperature per star; I = chaos blood-red bleed; pd = dim factor; tw = scintillation (0.75..1)
-const MEDAL_COL = { core: ["#FFFDF8", "#FFF6E6"], halo: ["#FFF1DC", "#FFE4B4"], bloom: ["#FFE6C0", "#F6CF8E"] }
+// v9 medal stars, drawn like real astrophotography (not geometry): every star is a hot white core with colour only in its soft Gaussian glow,
+// real telescope diffraction spikes (thin, tapering, faint, scaled by brightness, ONE fixed angle for every star like one telescope: big = 4
+// Newtonian spikes · superior = JWST-style 6 + 2 short struts, with a faint bloom, airy ring and nebulosity · small = no spikes), and its
+// 5 / 10 / 20 specks are real field stars: power-law brightness (a few brighter, many faint), jittered positions, slight colour variation,
+// soft glows. 8 natural DESIGNS per tier (open cluster, globular cluster, association, unequal binary, trapezium, reflection nebula, dust lanes,
+// cloud edge, field-star stream ...) in four calm colours — white · ice blue-white · soft gold · lavender — plus 5 realistic CHAOS looks per tier.
+// I = chaos blood-red bleed (every colour goes through redStar) · pd = dim factor
+const SC = {                                                    // the normal palette: [core, glow, outer bloom]
+  white: ["#FFFFFF", "#F1F3FD", "#DCE2F6"], ice: ["#FFFFFF", "#CFDDFF", "#93B2F0"],
+  gold: ["#FFFDF4", "#FFEBC0", "#EED39A"], lav: ["#FFFFFF", "#E2DAFF", "#B2A2EE"],
+}
+const SPECK_TINTS = ["#FFFFFF", "#F3F5FF", "#D3E2FF", "#FFEDBA", "#E4DCFF", "#C8D8FF"]
+const design = (name, c, o = {}) => ({ name, core: SC[c][0], halo: SC[c][1], bloom: SC[c][2], m: 1, ...o })
+const NB = { blue: ["#7E9EF0", "#A9C0FF"], lav: ["#9C88E8", "#C4B4FF"], warm: ["#E8CFA0", "#C9B8F0"], ice: ["#B9CCFF", "#E2E8FF"] }
+const neb = (c, at, r, a, o = {}) => ({ c, at, r, a, ...o })                       // a nebula: colours · offset (in star radii) · size · strength
+const lane = (at, len, w, ang, a) => ({ at, len, w, ang, a })                        // a dark dust lane drawn in front
+// form = how the field stars sit: open (Pleiades-like) · glob (dense core thinning out) · assoc (loose association) · stream (faint field
+// stream) · trap (trapezium-like knot) · field (scattered) · edge (embedded along a cloud edge) · dust (dimmed behind dust)
+// comp = companions [dx, dy, brightness, colour] (unequal brightness) · neb = nebulae · dust = lanes in front
+const STAR_LOOKS = {
+  1: [
+    design("Lone field star", "white", { form: "stream" }),
+    design("Unequal binary", "gold", { form: "field", comp: [[0.36, 0.14, 0.42, "ice"]] }),
+    design("Wide pair", "ice", { form: "assoc", comp: [[-1.0, 0.42, 0.55, "white"]] }),
+    design("Trapezium knot", "white", { form: "trap", m: 0.8, neb: [neb(NB.lav, [0.05, 0.05], 0.7, 0.13)] }),
+    design("Reflection wisp", "ice", { form: "field", neb: [neb(NB.blue, [0.55, -0.3], 0.75, 0.2, { ex: 1.7, ang: 0.5 })] }),
+    design("Dust-veiled star", "gold", { form: "dust", m: 0.85, neb: [neb(NB.warm, [0, 0.1], 0.8, 0.2)], dust: [lane([0.1, 0.36], 2.2, 0.3, 0.4, 0.55)] }),
+    design("Tiny open cluster", "lav", { form: "open", m: 0.7, sm: 1.9, neb: [neb(NB.blue, [0.2, 0.1], 0.9, 0.14)] }),
+    design("Cloud-edge star", "white", { form: "edge", neb: [neb(NB.lav, [-0.85, 0.15], 0.95, 0.22, { ex: 0.7 })] }),
+  ],
+  10: [
+    design("Pleiades-like cluster", "ice", { form: "open", neb: [neb(NB.blue, [0.15, 0.1], 1.0, 0.14, { ex: 1.4, ang: 0.3 })] }),
+    design("Unequal binary", "gold", { form: "assoc", comp: [[0.42, -0.22, 0.45, "ice"]] }),
+    design("Trapezium group", "white", { form: "trap", m: 0.85, neb: [neb(NB.lav, [0, 0.05], 0.9, 0.16), neb(NB.ice, [0.25, -0.2], 0.5, 0.1)] }),
+    design("Dust-lane star", "gold", { form: "dust", neb: [neb(NB.warm, [0, 0], 0.85, 0.12)], dust: [lane([0.05, 0.36], 2.6, 0.26, 0.35, 0.45), lane([-0.25, -0.5], 1.6, 0.18, 0.15, 0.32)] }),
+    design("Reflection nebula", "ice", { form: "field", neb: [neb(NB.blue, [0.65, 0.35], 0.95, 0.24, { ex: 1.6, ang: 0.6 })] }),
+    design("Field-star stream", "white", { form: "stream" }),
+    design("Gas-cloud edge", "lav", { form: "edge", neb: [neb(NB.lav, [-0.95, 0.1], 1.15, 0.24, { ex: 0.65 })], dust: [lane([-0.45, 0.1], 1.9, 0.16, 1.45, 0.35)] }),
+    design("Wide triple", "white", { form: "field", comp: [[0.9, -0.42, 0.48, "gold"], [-1.05, 0.62, 0.3, "ice"]] }),
+  ],
+  100: [
+    design("Globular cluster", "gold", { form: "glob", glow: 0.16 }),
+    design("Blue supergiant in reflection nebula", "ice", { form: "field", neb: [neb(NB.blue, [0.2, 0.1], 1.3, 0.2, { ex: 1.5, ang: 0.4, n: 24 })] }),
+    design("Star in dust lanes", "gold", { form: "dust", neb: [neb(NB.warm, [0, 0], 1.1, 0.16, { n: 20 })], dust: [lane([0, 0.38], 3, 0.26, 0.3, 0.45), lane([-0.15, -0.52], 2.2, 0.18, 0.1, 0.34), lane([0.45, 0.8], 1.6, 0.14, 0.5, 0.3)] }),
+    design("Young open cluster", "white", { form: "open", neb: [neb(NB.blue, [0.3, 0.15], 1.1, 0.1, { ex: 1.8, ang: -0.3 })] }),
+    design("Trapezium nursery", "lav", { form: "trap", neb: [neb(NB.lav, [0, 0], 1.25, 0.2, { n: 24 }), neb(NB.warm, [0.4, -0.3], 0.6, 0.1)], dust: [lane([-0.55, 0.45], 1.8, 0.22, 0.8, 0.35)] }),
+    design("Binary supergiants", "white", { form: "assoc", comp: [[0.55, 0.28, 0.72, "gold"]] }),
+    design("Pillar-edge star", "ice", { form: "edge", neb: [neb(["#8FA8E8", "#C2CCF4"], [-0.9, 0.1], 1.2, 0.14, { ex: 0.7, n: 22 }), neb(NB.lav, [-1.1, -0.4], 0.7, 0.14)], dust: [lane([-0.85, 0.08], 1.1, 0.24, 0.05, 0.55)] }),
+    design("Stellar stream", "white", { form: "stream", sm: 1.2 }),
+  ],
+}
+// chaos looks (reds allowed): dying, dusty, swallowed stars — also drawn realistically
+const RED = ["#FFB8A0", "#FF8A6A", "#FF6A5A", "#E8A080", "#FFD0B8", "#D06070"]
+const NR = { red: ["#B0202C", "#FF5A48"], ember: ["#C0401E", "#FF9A5A"], blood: ["#7A0618", "#D0303A"], ash: ["#6A3A40", "#B88A8E"] }
+const chaosLook = (name, core, halo, bloom, o = {}) => ({ name, core, halo, bloom, m: 1, tints: RED, band: "#6A2830", ...o })
+const CHAOS_LOOKS = {
+  1: [
+    chaosLook("Ember", "#FFE2C0", "#FF8A4A", "#E0461E", { form: "field", m: 0.85, neb: [neb(NR.ember, [0.3, 0], 0.6, 0.12)] }),
+    chaosLook("Dying red dwarf", "#FFB0A0", "#E0505A", "#A01020", { form: "assoc", m: 0.75, comp: [[0.4, -0.2, 0.3, null]] }),
+    chaosLook("Blood point", "#FFE0E0", "#FF2A3A", "#C0101E", { form: "dust", dust: [lane([0.15, 0], 2.2, 0.3, 1.1, 0.4)] }),
+    chaosLook("Smoulder haze", "#FFC8B8", "#D04050", "#902030", { form: "edge", neb: [neb(NR.red, [-0.6, 0.1], 1.0, 0.22)] }),
+    chaosLook("Ash ghost", "#E8D0D0", "#B88A8E", "#5A2228", { form: "field", m: 0.55, fx: "pn" }),
+  ],
+  10: [
+    chaosLook("Dying red giant", "#FFD0B8", "#FF6A4A", "#B01818", { form: "field", m: 1.1, neb: [neb(NR.red, [0.7, 0.15], 1.0, 0.22, { ex: 2, ang: 0.2 })], dust: [lane([0.9, 0.3], 1.2, 0.2, 0.4, 0.3)] }),
+    chaosLook("Bok globule", "#FFE6D8", "#FF5A48", "#B02030", { form: "field", m: 0.7, fx: "globule", g: [0.25, 0.05, 0.6] }),
+    chaosLook("Supernova filament", "#FFE0E0", "#FF4A5A", "#A01828", { form: "field", m: 0.7, fx: "filament", fr: 0.95 }),
+    chaosLook("Ember star", "#FFE8C8", "#FF9A50", "#D04A1A", { form: "stream", neb: [neb(NR.ember, [-0.9, 0.2], 0.8, 0.18, { ex: 2.4, ang: 0.15 })] }),
+    chaosLook("Blood eclipse", "#FFD8D0", "#FF3040", "#901020", { form: "dust", m: 0.6, fx: "lobes" }),
+  ],
+  100: [
+    chaosLook("Black hole", "#FFC8A0", "#C0303A", "#70101A", { form: "assoc", fx: "blackhole", nostar: true }),
+    chaosLook("Supernova remnant", "#FFE0D8", "#FF5A60", "#B01828", { form: "field", m: 0.75, fx: "filament", fr: 1.25 }),
+    chaosLook("Blood eclipse sun", "#FFD8C8", "#FF3A3A", "#A01018", { form: "edge", fx: "globule", g: [0.38, 0.05, 0.62] }),
+    chaosLook("Shredded star", "#FFE8DC", "#FF6A5A", "#B02838", { form: "stream", m: 0.8, fx: "tde" }),
+    chaosLook("Red hypergiant", "#FFD8C0", "#FF5A3A", "#A01418", { form: "field", m: 1.15, neb: [neb(NR.red, [0.1, 0], 1.2, 0.2, { n: 26 }), neb(NR.blood, [0.5, -0.4], 0.8, 0.2)], dust: [lane([0.3, 0.35], 1.5, 0.2, 0.7, 0.3), lane([-0.4, -0.2], 1.1, 0.16, -0.4, 0.28)] }),
+  ],
+}
+// random-but-stable assignment: each tier deals its looks from a seeded shuffled deck (every look once before any repeats, and never the same
+// look twice in a row across decks), so star i of a tier keeps its look forever, a new star gets the next card, and nothing reshuffles per
+// refresh or per hour. STAR_LOOK_SEED fixes the deal.
+const STAR_LOOK_SEED = 20261029
+function lookAt(list, d, i, salt) {
+  const r = rng(STAR_LOOK_SEED + d * 131 + salt), n = list.length, seq = []
+  while (seq.length <= i) {
+    const deck = list.map((_, k) => k)
+    for (let k = n - 1; k > 0; k--) { const j = Math.floor(r() * (k + 1)); [deck[k], deck[j]] = [deck[j], deck[k]] }
+    if (seq.length && deck[0] === seq[seq.length - 1]) [deck[0], deck[n - 1]] = [deck[n - 1], deck[0]]
+    seq.push(...deck)
+  }
+  return list[seq[i]]
+}
+const starVariant = (d, i) => lookAt(STAR_LOOKS[d], d, i, 0)
+const chaosVariant = (d, i) => lookAt(CHAOS_LOOKS[d], d, i, 7)
+const chaosRank = (d, i) => MWH(STAR_LOOK_SEED % 99991, d * 31 + i, 91)          // fixed conversion order: the lowest ranks turn first
 function psf(ctx, x, y, sg, hex, peak, layers = 8) {        // stacked translucent discs: radii at Gaussian iso-levels, so the summed light falls off like exp(-r²/2σ²)
   const a = 1 - Math.pow(1 - clamp(peak, 0, 0.99), 1 / layers)
   for (let k = 1; k <= layers; k++) dot(ctx, x, y, sg * Math.sqrt(-2 * Math.log(k / (layers + 1))), hex, a)
 }
-function spike(ctx, x, y, len, w, hex, a) {                 // a thin diffraction spike pair that fades along its length (layered tapering slivers)
-  for (const [dx, dy] of [[1, 0], [0, 1]]) for (let k = 0; k < 4; k++) {
+function spikeAt(ctx, x, y, th, len, w, hex, a) {           // one thin diffraction spike pair along angle th, fading along its length (layered tapering slivers)
+  const dx = Math.cos(th), dy = Math.sin(th)
+  for (let k = 0; k < 4; k++) {
     const l = len * (0.35 + 0.22 * k), ww = w * (1 - k * 0.18), p = new Path()
-    p.move(new Point(x - dx * l, y - dy * l)); p.addLine(new Point(x + dy * ww, y + dx * ww))
-    p.addLine(new Point(x + dx * l, y + dy * l)); p.addLine(new Point(x - dy * ww, y - dx * ww)); p.closeSubpath()
+    p.move(new Point(x - dx * l, y - dy * l)); p.addLine(new Point(x - dy * ww, y + dx * ww))
+    p.addLine(new Point(x + dx * l, y + dy * l)); p.addLine(new Point(x + dy * ww, y - dx * ww)); p.closeSubpath()
     fillPath(ctx, p, hex, a * (0.5 - k * 0.1))
   }
 }
-function medalStar(ctx, x, y, u, d, I, pd = 1, tw = 1, temp = 0.5) {
-  const pick = (arr) => mixHex(arr[0], arr[1], temp), K = MEDAL_COL
-  const core = redStar(pick(K.core), I, 0.45), halo = redStar(pick(K.halo), I, 0.9), bloom = redStar(pick(K.bloom), I, 1)
-  if (d === 0) {                                                         // crisp tiny point with a faint halo
-    psf(ctx, x, y, 0.5 * u, halo, 0.28 * pd, 4)
-    dot(ctx, x, y, 0.3 * u, halo, 0.9 * pd); dot(ctx, x, y, 0.18 * u, core, pd)
-    return
-  }
-  const S = { 1: 0.8, 10: 1.35, 100: 2.0 }[d]                            // PSF scale
-  psf(ctx, x, y, 2.6 * u * S, bloom, 0.22 * pd, 10)                                   // wide faint bloom (scattered light)
-  if (I > 0) psf(ctx, x, y, 2.2 * u * S, SINISTER, 0.18 * I * pd, 6)
-  psf(ctx, x, y, 0.95 * u * S, halo, 0.92 * pd, 9)                                    // the seeing disc
-  const sp = { 1: [4, 0.2, 0.32], 10: [10, 0.34, 0.85], 100: [16, 0.42, 0.78] }[d]    // spike length · width · strength (gentle on the superior)
-  spike(ctx, x, y, sp[0] * u * (0.85 + 0.15 * tw), sp[1] * u, halo, sp[2] * tw * pd)
-  psf(ctx, x, y, 0.42 * u * S, core, pd * 0.98, 5)                                   // saturated core
-  dot(ctx, x, y, 0.36 * u * S, "#FFFFFF", pd)
+function softRing(ctx, x, y, r, hex, a, w) {                 // a faint ring with soft edges: three nested strokes (one each, no overlap beads)
+  for (const [k, aa] of [[2.6, 0.3], [1.6, 0.55], [0.8, 1]]) { ctx.setStrokeColor(col(hex, a * aa)); ctx.setLineWidth(w * k); ctx.strokeEllipse(new Rect(x - r, y - r, r * 2, r * 2)) }
 }
-// a medal star with its loose cluster of specks (fixed offsets per slot, stretched along the band); skip(x, y) drops a speck that would land on UI
-function medalCluster(ctx, x, y, u, d, I, seed, pd = 1, tw = 1, ang = 0, skip = null) {
-  const q = rng(seed), R = { 1: 4.2, 10: 7, 100: 10.5 }[d] * u, ca = Math.cos(ang), sa = Math.sin(ang)
-  for (let i = 0; i < MEDAL_SPECKS[d]; i++) {
-    const a = q() * 6.283, rr = R * (0.35 + 0.65 * Math.sqrt(q())), ex = Math.cos(a) * rr * 1.35, ey = Math.sin(a) * rr * 0.75
-    const sx = x + ex * ca - ey * sa, sy = y + ex * sa + ey * ca, b = 0.55 + 0.45 * q()
-    if (skip && skip(sx, sy)) continue
-    medalStar(ctx, sx, sy, u * (0.8 + 0.5 * q()), 0, I, pd * b, 1, q())
+function tiltRing(ctx, x, y, rx, ry, th, hex, a, w) {         // a tilted thin ellipse (a disc or ring seen at an angle), soft-edged
+  const c = Math.cos(th), s = Math.sin(th), p = new Path()
+  for (let j = 0; j <= 48; j++) { const t = j / 48 * 6.2832, ex = Math.cos(t) * rx, ey = Math.sin(t) * ry, pt = new Point(x + ex * c - ey * s, y + ex * s + ey * c); if (j) p.addLine(pt); else p.move(pt) }
+  for (const [k, aa] of [[2.4, 0.3], [1, 1]]) { ctx.addPath(p); ctx.setStrokeColor(col(hex, a * aa)); ctx.setLineWidth(w * k); ctx.strokePath() }
+}
+function sliver(ctx, x, y, a, r0, r1, w, hex, al) {          // a short tapering radial streak (corona streamers, sparks, cracks)
+  const c = Math.cos(a), s = Math.sin(a), p = new Path()
+  p.move(new Point(x + c * r0 - s * w, y + s * r0 + c * w)); p.addLine(new Point(x + c * r1, y + s * r1)); p.addLine(new Point(x + c * r0 + s * w, y + s * r0 - c * w)); p.closeSubpath()
+  fillPath(ctx, p, hex, al)
+}
+// ---- v9 realistic drawing ----
+const SPIKE_A = 0.21                                                       // one spike angle for every star (one telescope)
+const gauss = (q) => (q() + q() + q() - 1.5) * 1.15
+const powM = (q, lo, hi) => lo + hi * Math.pow(q(), 3.2)                   // power-law brightness: a few bright, many faint
+function spikes(ctx, x, y, u, m, hex, tier, pd) {                          // real diffraction spikes: thin, tapering, faint, length ∝ brightness
+  const len = (3 + 7.5 * m) * u, w = (0.06 + 0.07 * m) * u, a = clamp(0.14 + 0.22 * m, 0, 0.45) * pd
+  const angs = tier === 100 ? [0, Math.PI / 3, -Math.PI / 3] : [0, Math.PI / 2]
+  for (const t of angs) spikeAt(ctx, x, y, SPIKE_A + Math.PI / 2 + t, len, w, hex, a)
+  if (tier === 100) spikeAt(ctx, x, y, SPIKE_A, len * 0.4, w * 0.75, hex, a * 0.55)   // JWST's two short struts
+}
+function realStar(ctx, x, y, u, m, cl, tier, pd, fl = 0) {                 // cl = [core, glow, bloom]: hot white centre, colour only in the glow
+  const sg = (0.3 + 0.72 * m) * u
+  if (fl) { psf(ctx, x, y, sg * 9, cl[2], 0.2 * pd, 12); psf(ctx, x, y, sg * 4, cl[1], 0.25 * pd, 10) }   // milestone flare: a soft bloom
+  if (m > 0.35) psf(ctx, x, y, sg * 3.4, cl[2], 0.07 * m * pd, 7)
+  psf(ctx, x, y, sg * 1.2, cl[1], clamp(0.48 * m, 0.08, 0.72) * pd, 7)
+  if (tier === 100) softRing(ctx, x, y, sg * 2.8, cl[1], 0.028 * pd, 0.2 * u)   // a faint airy ring
+  if (tier >= 10 && m > 0.25) spikes(ctx, x, y, u, m * (fl ? 1.35 : 1), cl[1], tier, pd)
+  psf(ctx, x, y, sg * 0.42, cl[0], clamp(0.72 + 0.2 * m, 0, 0.95) * pd, 5)
+  dot(ctx, x, y, Math.max(0.09 * u, sg * 0.16), cl[0], pd)
+}
+function speck(ctx, x, y, u, m, c, pd, tier) {                             // a field star: soft glow + tiny white-ish centre, size ∝ brightness
+  psf(ctx, x, y, (0.2 + 0.75 * m) * u, c, clamp(0.16 + 0.95 * m, 0, 0.85) * pd, 4)
+  dot(ctx, x, y, (0.07 + 0.2 * m) * u, mixHex(c, "#FFFFFF", 0.55), clamp(0.25 + 1.3 * m, 0, 1) * pd)
+  if (tier >= 10 && m > 0.3) spikes(ctx, x, y, u * 0.5, m * 0.6, c, tier, pd * 0.7)
+}
+function nebula(ctx, x, y, R, cA, cB, a, q, ex, ang, n, skip) {             // soft, clumpy gas: many faint Gaussian puffs
+  const ca = Math.cos(ang), sa = Math.sin(ang)
+  for (let k = 0, N = Math.round(n * 1.6); k < N; k++) {                  // many faint puffs, wide soft edges, so no outline shows
+    const gx = gauss(q) * ex * 0.45 * R, gy = gauss(q) * 0.45 * R, bx = x + gx * ca - gy * sa, by = y + gx * sa + gy * ca
+    if (skip && skip(bx, by)) continue
+    psf(ctx, bx, by, R * (0.14 + 0.24 * q()), mixHex(cA, cB, q()), a * 0.85 * (0.25 + 0.75 * q() * q()), 7)
   }
-  medalStar(ctx, x, y, u, d, I, pd, tw, q())
+}
+function dustLane(ctx, x, y, len, w, ang, a, q, skip) {                   // a dark, ragged dust lane
+  const ca = Math.cos(ang), sa = Math.sin(ang), n = 18, ph = q() * 6.28
+  for (let k = 0; k <= n; k++) {
+    const f = k / n - 0.5, t = f * len, o = Math.sin(k * 0.45 + ph) * w * 0.5 + gauss(q) * w * 0.15
+    const ww = w * (0.5 + 0.5 * Math.sin(k * 0.7 + ph * 2) ** 2) * (1 - 1.3 * f * f), bx = x + t * ca - o * sa, by = y + t * sa + o * ca
+    if (skip && skip(bx, by)) continue
+    psf(ctx, bx, by, ww * 0.9, "#020208", a * 0.34, 7)
+  }
+}
+function field(form, n, q) {                                               // field-star positions (star radii) + brightness
+  const P = [], add = (x, y, m) => P.push([x, y, m])
+  switch (form) {
+    case "open": { const cx = 0.2 * gauss(q), cy = 0.2 * gauss(q), mem = Math.ceil(n * 0.65)
+      for (let k = 0; k < n; k++) k < mem ? add(cx + gauss(q) * 0.5, cy + gauss(q) * 0.42, powM(q, 0.08, 0.4) + (k < 3 ? 0.12 : 0)) : add(gauss(q) * 1.1, gauss(q) * 0.9, powM(q, 0.03, 0.15)); break }
+    case "glob": for (let k = 0; k < n * 3; k++) { const r = 0.05 + 1.05 * Math.pow(q(), 1.9), a = q() * 6.283; add(Math.cos(a) * r, Math.sin(a) * r, k < n ? powM(q, 0.05, 0.3) * (1.15 - 0.5 * r) : 0.025 + 0.05 * q()) } break
+    case "assoc": { const G = [0, 1, 2].map(() => { const a = q() * 6.283, r = 0.6 + 0.5 * q(); return [Math.cos(a) * r, Math.sin(a) * r] })
+      for (let k = 0; k < n; k++) { const g = G[k % 3]; add(g[0] + gauss(q) * 0.28, g[1] + gauss(q) * 0.24, powM(q, 0.04, 0.32)) } break }
+    case "stream": { const b = 0.15 * gauss(q); for (let k = 0; k < n; k++) { const t = (q() * 2 - 1) * 1.45; add(t, 0.16 * t * t - 0.1 + b * t + gauss(q) * 0.08, powM(q, 0.03, 0.26)) } break }
+    case "trap": { const T = [[0.3, -0.08, 0.42], [-0.2, 0.24, 0.32], [0.06, 0.36, 0.25], [-0.26, -0.2, 0.2]]
+      for (let k = 0; k < n; k++) k < 4 ? add(T[k][0] * (0.9 + 0.2 * q()), T[k][1] * (0.9 + 0.2 * q()), T[k][2]) : add(gauss(q) * 0.85, gauss(q) * 0.75, powM(q, 0.03, 0.14)); break }
+    case "edge": for (let k = 0; k < n; k++) add(-0.15 - 0.85 * q(), gauss(q) * 0.55, powM(q, 0.04, 0.3)); break
+    case "dust": for (let k = 0; k < n; k++) { const a = q() * 6.283, r = 0.3 + 0.95 * Math.sqrt(q()); add(Math.cos(a) * r, Math.sin(a) * r * 0.85, powM(q, 0.03, 0.2)) } break
+    default: for (let k = 0; k < n; k++) { const a = q() * 6.283, r = 0.3 + 0.95 * Math.sqrt(q()); add(Math.cos(a) * r, Math.sin(a) * r * 0.85, powM(q, 0.03, 0.32)) }   // "field"
+  }
+  return P
+}
+// chaos structures (realistic): a dark globule with a red rim, supernova filaments, a black hole, a tidal stream, a bipolar dusty disc, a faint shell
+function chaosFx(ctx, x, y, R, u, v, B, q, th, pd, skip, front, m) {
+  const P = (fx, fy) => [x + (fx * Math.cos(th) - fy * Math.sin(th)) * R, y + (fx * Math.sin(th) + fy * Math.cos(th)) * R]
+  switch (v.fx) {
+    case "globule": if (front) { const [gx, gy] = P(v.g[0], v.g[1]), r = v.g[2] * R
+      for (let k = 0; k < 16; k++) { const a = q() * 6.283, rr = r * (0.85 + 0.2 * q())                // a ragged red rim, lit from behind
+        psf(ctx, gx + Math.cos(a) * rr, gy + Math.sin(a) * rr, r * (0.18 + 0.15 * q()), B(mixHex(v.halo, v.bloom, q())), 0.1 * pd, 6) }
+      for (let k = 0; k < 14; k++) psf(ctx, gx + gauss(q) * r * 0.32, gy + gauss(q) * r * 0.28, r * (0.22 + 0.2 * q()), "#010103", 0.32 * pd, 10) } break
+    case "filament": if (!front) { nebula(ctx, x, y, R * 0.8, B("#40080E"), B(v.bloom), 0.08 * pd, q, 1, 0, 10, skip)
+      for (let k = 0; k < 6; k++) { const a0 = k * 1.05 + q() * 0.6, span = 0.35 + q() * 0.55, r0 = R * v.fr * (0.6 + 0.55 * q()), p = new Path(), c = B(mixHex("#FF5A48", "#FF9A6A", q()))
+        const wv = 0.02 + 0.03 * q(), ph = q() * 6.28
+        for (let j = 0; j <= 24; j++) { const t = a0 + span * j / 24, rr = r0 * (1 + wv * Math.sin(j * 0.32 + ph)), pt = new Point(x + Math.cos(t) * rr, y + Math.sin(t) * rr * 0.88); j ? p.addLine(pt) : p.move(pt) }
+        for (const [w, al] of [[2.2, 0.05], [1, 0.1], [0.4, 0.22 + 0.2 * q()]]) { ctx.addPath(p); ctx.setStrokeColor(col(c, al * pd)); ctx.setLineWidth(w * u); ctx.strokePath() } } } break
+    case "blackhole": if (!front) { psf(ctx, x, y, R * 0.75, B(v.bloom), 0.16 * pd, 9); nebula(ctx, x, y, R * 0.55, B(v.bloom), B(v.halo), 0.12 * pd, q, 3, 0.25, 12, skip)
+      for (let k = 0; k < 16; k++) { const t = -1.3 + 2.6 * k / 15, r = R * 0.3; psf(ctx, x + Math.cos(t + 0.3) * r, y + Math.sin(t + 0.3) * r, R * 0.1, B(mixHex(v.core, v.halo, Math.abs(t) / 1.3)), 0.25 * (1 - 0.6 * Math.abs(t) / 1.3) * pd, 4) }
+      for (let k = 0; k < 9; k++) { const t = 1.6 + 3 * k / 8, r = R * 0.3; psf(ctx, x + Math.cos(t + 0.3) * r, y + Math.sin(t + 0.3) * r, R * 0.07, B(v.halo), 0.12 * pd, 4) }
+      psf(ctx, x, y, R * 0.18, "#000000", 0.85, 7); dot(ctx, x, y, R * 0.16, "#000000", 0.9) } break
+    case "tde": if (!front) { for (let k = 0; k < 60; k++) { const f = Math.pow(q(), 0.8), a = th + f * 3.4 + gauss(q) * 0.08, r = R * (0.12 + 1.0 * f) * (1 + gauss(q) * 0.06), [sx, sy] = [x + Math.cos(a) * r, y + Math.sin(a) * r * 0.75]
+      if (skip && skip(sx, sy)) continue; psf(ctx, sx, sy, R * (0.04 + 0.07 * f) * (0.6 + 0.8 * q()), B(mixHex(v.halo, "#FF9A6A", f)), 0.16 * (1 - 0.7 * f) * pd, 5) } } break
+    case "lobes": if (!front) { for (const s of [-1, 1]) { const [lx, ly] = P(0, s * 0.42); nebula(ctx, lx, ly, R * 0.65, B(NR.red[0]), B(NR.red[1]), 0.22 * pd, q, 1.5, th, 12, skip) } }
+      else dustLane(ctx, x, y, R * 2.2, R * 0.26, th, 0.55 * pd, q, skip); break
+    case "pn": if (!front) { for (let k = 0; k < 20; k++) { const a = q() * 6.283, r = R * (0.55 + 0.12 * gauss(q)); psf(ctx, x + Math.cos(a) * r, y + Math.sin(a) * r * 0.85, R * 0.16, B(mixHex("#B88A8E", "#7A9EB0", q())), 0.07 * pd, 4) } } break
+  }
+}
+// a medal star in its natural setting; the setting turns slowly through the day (rot) while spikes keep the telescope's angle; skip(x, y) drops on UI
+function medalCluster(ctx, x, y, u, d, I, seed, pd = 1, tw = 1, ang = 0, skip = null, rot = 0, fl = 0, v = null) {
+  const q = rng(seed), R = { 1: 4.4, 10: 7, 100: 10.5 }[d] * u, n = MEDAL_SPECKS[d]
+  v = v || starVariant(d, 0)
+  const B = (c, amt = 0.9) => redStar(c, I, amt), th = q() * 6.283 + rot, ct = Math.cos(th), st = Math.sin(th)
+  const P = (fx, fy) => [x + (fx * ct - fy * st) * R, y + (fx * st + fy * ct) * R], tints = v.tints || SPECK_TINTS
+  psf(ctx, x, y, R * 0.85, B(v.band || "#B8B2DC"), 0.05 * pd, 6)                 // unresolved starlight: sits inside the Milky Way band
+  if (v.glow) psf(ctx, x, y, R * 0.42, B(v.halo), v.glow * pd, 8)                 // a globular's unresolved core
+  for (const nb of v.neb || []) { const [nx, ny] = P(nb.at[0], nb.at[1]); nebula(ctx, nx, ny, nb.r * R, B(nb.c[0]), B(nb.c[1]), nb.a * pd, q, nb.ex || 1, th + (nb.ang || 0), nb.n || (d === 100 ? 18 : d === 10 ? 13 : 9), skip) }
+  if (v.fx) chaosFx(ctx, x, y, R, u, v, B, q, th, pd, skip, false)
+  for (const [fx, fy, m] of field(v.form, n, q)) {
+    const [sx, sy] = P(fx, fy), c = B(mixHex(v.halo, tints[Math.floor(q() * tints.length)], 0.35 + 0.5 * q()))
+    if (skip && skip(sx, sy)) continue
+    speck(ctx, sx, sy, u, m * (v.sm || 1), c, pd, d)
+  }
+  for (const [cx, cy, m, k] of v.comp || []) {
+    const [sx, sy] = P(cx, cy), c = SC[k] || [v.core, v.halo, v.bloom]
+    if (skip && skip(sx, sy)) continue
+    realStar(ctx, sx, sy, u, m * { 1: 0.62, 10: 0.88, 100: 1.05 }[d], [B(c[0], 0.45), B(c[1]), B(c[2])], d, pd, 0)
+  }
+  const m = (v.m || 1) * { 1: 0.78, 10: 1.0, 100: 1.16 }[d] * tw
+  if (!v.nostar) realStar(ctx, x, y, u, m, [B(v.core, 0.45), B(v.halo), B(v.bloom)], d, pd, fl)
+  else if (fl) psf(ctx, x, y, R * 1.2, B(v.bloom), 0.2 * pd, 12)
+  for (const ln of v.dust || []) { const [lx, ly] = P(ln.at[0], ln.at[1]); dustLane(ctx, lx, ly, ln.len * R, ln.w * R, th + ln.ang, ln.a * pd, q, skip) }
+  if (v.fx) chaosFx(ctx, x, y, R, u, v, B, q, th, pd, skip, true)
+}
+// milestone flare: remember the last count + day in Scriptable's local storage; when the count crosses a new hundred (a new superior star is
+// born) that superior shows a burst ring for the rest of the day. Only live/cached sheet data counts (never the built-in snapshot). Safe anywhere.
+const milestonePath = () => fm.joinPath(fm.documentsDirectory(), "grok-fitness-milestone.json")
+function milestoneFlare(n, source) {
+  const today = dayNumber(skyDate())
+  let st = null
+  try { if (fm.fileExists(milestonePath())) st = JSON.parse(fm.readString(milestonePath())) } catch (e) { st = null }
+  let flare = st && st.flare && st.flare.day === today ? st.flare : null
+  if (source === "snapshot") return flare ? flare.h : 0
+  if (st && Number.isFinite(st.count) && Math.floor(n / 100) > Math.floor(st.count / 100) && n < 1000) flare = { day: today, h: Math.floor(n / 100) }
+  try { fm.writeString(milestonePath(), JSON.stringify({ count: n, day: today, flare })) } catch (e) {}
+  return flare ? flare.h : 0
 }
 const fbmRaw = fbm
 function drawMilkyWay(ctx, W, H, p, pal, s) {
@@ -1573,14 +1774,22 @@ function drawMilkyWay(ctx, W, H, p, pal, s) {
   // ---- medal stars: every slot (denomination x index) has a fixed spot in band coordinates, worked out for ALL 27 slots in one fixed order,
   // so a new medal only adds a small star or merges (10 small -> 1 big, 10 big -> 1 superior) and nothing else jumps; they float with the flow
   {
-    const flow = 2 * Math.PI * hr / 24, skip = (x, y) => blocked(x, y, 0.5 * u)
+    const flow = 2 * Math.PI * hr / 24, skip = (x, y) => blocked(x, y, 0.5 * u), slot = Math.floor(skyDate().getTime() / 1800000)
     // drawn later, on top of the eclipse and the chaos tint (render calls this), so chaos bleeds them blood red but never hides them
+    // chaos looks: stars convert in a fixed order (lowest chaosRank first); share = 0 calm · ~20% gold · ~59% diamond · 100% prismatic
+    const CK = kind === "clear" ? 0 : BLOOD_K[kind] || 0, share = CK > 0 ? clamp((CK - 0.25) / 0.75, 0, 1) : 0
+    const litS = spots.filter((S) => !S.none && S.i < coins[S.d]).sort((a, b) => chaosRank(a.d, a.i) - chaosRank(b.d, b.i))
+    const nCh = share >= 1 ? litS.length : share > 0 ? Math.max(1, Math.round(share * litS.length)) : 0
+    const turned = new Set(litS.slice(0, nCh).map((S) => S.d * 100 + S.i))
     __STAR_DRAW = () => spots.slice().reverse().forEach((S) => {
       if (S.none || S.i >= coins[S.d]) return
       const q = rng(S.d * 7919 + S.i * 104729 + 7), ph0 = q() * 6.283
       const fa = (0.006 + 0.008 * q()) * L, fo = (0.3 + 0.4 * q()) * u      // a gentle float with the flow, never far from its slot
       const [x, y] = at(S.t + fa * Math.sin(flow + ph0), S.off + fo * Math.sin(flow * 2 + ph0))
-      medalCluster(ctx, x, y, u * 1.5, S.d, I, S.d * 1013 + S.i * 37 + 5, 1, 0.75 + 0.25 * Math.sin(hr * 3.1 + ph0), Math.atan2(dy, dx), skip)
+      const tq = MWH(slot, S.d * 31 + S.i, 71)                             // twinkle: a little different every refresh (30-min slot), steady within one
+      const tw = S.d === 100 ? 0.92 + 0.3 * (0.5 + 0.5 * Math.sin(slot * 2.39 + ph0)) * (0.7 + 0.3 * tq) : 0.8 + 0.2 * tq   // superiors pulse brighter
+      const fl = S.d === 100 && LIVE.flare && S.i === Math.min(9, LIVE.flare) - 1 ? 1 : 0
+      medalCluster(ctx, x, y, u * 1.5, S.d, I, S.d * 1013 + S.i * 37 + 5, 1, tw, Math.atan2(dy, dx), skip, ph0 + flow * 0.5, fl, turned.has(S.d * 100 + S.i) ? chaosVariant(S.d, S.i) : starVariant(S.d, S.i))
     })
   }
   // extra dust lanes only when chaos is rising (the eclipse proper is drawn in reasonsBand)
@@ -2403,6 +2612,8 @@ async function buildWidget(fam) {
   LIVE.quest = { train: Number(s.trainToday) > 0, cook: Number(s.cookToday) > 0 }
   LIVE.reason = { xp: clamp(s.xpNeed > 0 ? s.xpIn / s.xpNeed : 0, 0, 1), cleansed: Math.max(0, Math.floor(Number(s.cleansedMedals) || 0)) }
   LIVE.sky = {}
+  LIVE.flare = 0
+  try { LIVE.flare = milestoneFlare(medalTotal(s), source) } catch (e) { LIVE.flare = 0 }   // never let storage break the widget
   const w = new ListWidget()
   w.setPadding(0, 0, 0, 0)
   w.backgroundImage = render(W, H, bg, s, source)
