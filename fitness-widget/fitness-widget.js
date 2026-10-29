@@ -1,4 +1,4 @@
-// Mister 14 · Fitness Quest widget · v2 (premium galaxy: medal stars, Train | Cook bar, chaos blood theme)
+// Mister 14 · Fitness Quest widget · v3 (the medals build the Milky Way: no medals = dark sky; Train | Cook bar, chaos blood theme)
 // Scriptable · small + medium · built-in galaxy background drawn live (no setup needed)
 //
 // SETUP: run this script once in the Scriptable app, then add a small Scriptable widget to your
@@ -17,6 +17,7 @@
 
 // ===================== CONFIG =====================
 const XP_STYLE = "orbit"                          // XP ring look: "orbit" comet on an orbit (recommended) · "planet" ringed planet + tenth marks · "bar" slim horizontal comet bar
+const XP_RING = "halo"                           // XP ring look: "halo" (Galactic halo, G 14's pick) · "comet" (the earlier Comet Orbit)
 const STYLE = "ring"                              // "ring" · ring2 Orbit · ring3 Twin · ring4 Dial · ring5 Halo · ring6 Minimal · ring7 Filigree · ring8 Level Core · "crest" · "sword"
 const BG_MODE = "galaxy"                          // "galaxy" = built-in deep-space background, no setup · "wallpaper" = see-through look cropped from a home-screen screenshot
 const FONT_SET = 3                                // 1 Classic · 2 Avenir · 3 Futura · 4 Copperplate · 5 Optima & Bodoni · 6 Script & Mono
@@ -836,17 +837,51 @@ function xpOrbit(ctx, cx, cy, R, u, pct, red, variant) {
     twinkle(ctx, hx, hy, 7.6 * u, 0.95, "#FFF3C8")
   }
 }
+// ---- XP ring: Galactic halo ----
+function ringStroke(ctx, cx, cy, r, hex, a, w) { ctx.setStrokeColor(col(hex, a)); ctx.setLineWidth(w); ctx.strokeEllipse(new Rect(cx - r, cy - r, r * 2, r * 2)) }   // one stroke, no overlap beads
+function ringHalo(ctx, cx, cy, R, u, pct, red) {        // a ring of fine stars and dust that fills with progress; comet head at the tip
+  const a0 = -Math.PI / 2, a1 = a0 + Math.PI * 2 * pct, P = (a, r) => [cx + Math.cos(a) * r, cy + Math.sin(a) * r], q = rng(STAR_SEED + 77)
+  ringStroke(ctx, cx, cy, R, "#02030A", 0.55, 5.2 * u)                     // empty part: a faint dark track
+  ringStroke(ctx, cx, cy, R, SILVER, 0.07, 3.4 * u)
+  ringStroke(ctx, cx, cy, R + 2.6 * u, SILVER, 0.08, 0.35); ringStroke(ctx, cx, cy, R - 2.6 * u, SILVER, 0.06, 0.35)
+  for (let i = 0; i < 70; i++) { const f = q(), [x, y] = P(f * Math.PI * 2, R + (q() - 0.5) * 4 * u); dot(ctx, x, y, 0.22 * u, SILVER, 0.12 + 0.12 * q()) }   // unlit dust in the track
+  for (let i = 0, n = Math.round(90 * pct); i < n; i++) {                                    // soft dust glow under the stars
+    const f = (i + 0.5) / n, [x, y] = P(a0 + (a1 - a0) * f, R + (q() - 0.5) * 1.6 * u), c = xpCol(f, red)
+    dot(ctx, x, y, (2.4 + 1.6 * f) * u, c, 0.03 + 0.03 * f)
+  }
+  for (let i = 0, n = Math.round(900 * pct); i < n; i++) {                                   // thousands of fine stars, denser and brighter toward the head
+    const f = Math.pow(q(), 0.8), g = (q() + q() + q() - 1.5) / 0.5, rr = R + g * (1.1 + 1.2 * f) * u, [x, y] = P(a0 + (a1 - a0) * f, rr)
+    const m = Math.pow(q(), 6), c = mixHex(xpCol(f, red), "#FFFFFF", 0.25 + 0.4 * q())
+    if (m > 0.35) dot(ctx, x, y, (0.6 + m) * u, c, 0.08)
+    dot(ctx, x, y, (0.16 + 0.42 * m) * u, c, clamp(0.3 + 0.55 * f + 0.3 * m - 0.25 * Math.abs(g), 0.1, 1))
+  }
+  const [hx, hy] = P(a1, R)
+  for (let i = 0; i < 14; i++) { const [x, y] = P(a1 - i * 0.018, R); dot(ctx, x, y, (4.2 - i * 0.22) * u, red ? "#FF9A8A" : "#FFE6B0", 0.035) }   // coma trailing back along the ring
+  for (let i = 0; i < 6; i++) dot(ctx, hx, hy, (7.5 - i * 1.1) * u, red ? "#FF9A8A" : "#FFE2A8", 0.03 + i * 0.016)
+  dot(ctx, hx, hy, 1.9 * u, "#FFF6E0", 0.95); dot(ctx, hx, hy, 1 * u, "#FFFFFF", 1)
+  for (let i = 0; i < 4; i++) { const a = a0 + i * Math.PI / 2, [x, y] = P(a, R + 5.2 * u), lit = pct >= i / 4; dot(ctx, x, y, 0.5 * u, lit ? GOLD_SOFT : SILVER, lit ? 0.8 : 0.3) }
+}
 function xpChip(ctx, x, y, str, u, red) {              // glass pill: "64%"
   const w = 17 * u, h = 8.6 * u
   fillPath(ctx, rrPath(x - w / 2, y - h / 2, w, h, h / 2), "#05060C", 0.78); strokeP(ctx, rrPath(x - w / 2, y - h / 2, w, h, h / 2), red ? "#FF9A8A" : GOLD, 0.55, 0.5)
   text(ctx, str, FUT(true, 6.2 * u), 6.2 * u, red ? "#FFD0C4" : GOLD_BRIGHT, 1, x, y + 0.2 * u, "center", w)
 }
-function xpLabels(ctx, s, cx, cy, u, pct, CMP, red) {   // centre of the ring: TOTAL · XP · xpIn / xpNeed · % to next level
-  const f = CMP ? 0.82 : 1, size = (CMP ? 18 : 22) * u, g = red ? "#FFC9B8" : GOLD
-  text(ctx, track("TOTAL"), FUT(false, 6.2 * u * f), 6.2 * u * f, red ? "#FFB0A0" : GOLD_SOFT, 0.75, cx, cy - (CMP ? 17 : 21) * u, "center")
-  glowText(ctx, fmtNum(s.xp), FS.hero(size * FS.heroK), size, g, cx, cy - (CMP ? 4 : 5) * u, "center", 1.2)
-  text(ctx, `${fmtNum(s.xpIn)} / ${fmtNum(s.xpNeed)}`, FUT(true, 6.2 * u * f), 6.2 * u * f, SILVER, 0.85, cx, cy + (CMP ? 9 : 11) * u, "center", 60 * u)
-  text(ctx, track(`${Math.round(pct * 100)}% TO LV ${s.level + 1}`), FUT(false, 5.4 * u * f), 5.4 * u * f, red ? "#FFC9B8" : "#7FD6CC", 0.95, cx, cy + (CMP ? 17 : 20) * u, "center", 60 * u)
+// p.a. rate from the Widget-tab `savings` key (= Dashboard!B17 TOTAL SAVINGS RATE, already a percent); null when missing or paused → line hidden
+function paText(v) {
+  if (v == null || String(v).trim() === "") return null
+  const n = Number(String(v).replace(/[^\d.\-]/g, "")); if (!isFinite(n)) return null
+  return `${n < 0 ? "−" : "+"}${Math.abs(n).toFixed(3)}% p.a.`
+}
+function xpLabels(ctx, s, cx, cy, u, pct, CMP, red, LT) {   // centre of the ring: total XP (large) · LEVEL N · "64% to Lvl 10" · "+0.010% p.a." (the ring is the progress)
+  const g = red ? "#FFC9B8" : GOLD, lc = (LT && LT.text) || "#E3E7EF", nd = String(s.level).length
+  const L = CMP ? { xs: 16.5, xy: -9, lz: 8.2, lt: 5, ly: 3.2, pz: 4.9, py: 10.6, az: 4.3, ay: 16.6 } : { xs: 21, xy: -10.5, lz: 9.8, lt: 5.9, ly: 4.4, pz: 5.6, py: 13, az: 5, ay: 20.4 }
+  glowText(ctx, fmtNum(s.xp), FS.hero(L.xs * u * FS.heroK), L.xs * u, g, cx, cy + L.xy * u, "center", 1.2)
+  const lw = L.lt * 3.9 * u, gw = lw + nd * L.lz * 0.62 * u, lx = cx - gw / 2, ly = cy + L.ly * u
+  text(ctx, track("LEVEL"), FUT(false, L.lt * u), L.lt * u, lc, 0.85, lx, ly + 0.12 * L.lz * u, "left", 30 * u)
+  glowText(ctx, String(s.level), FUT(true, L.lz * u), L.lz * u, lc, lx + lw + nd * L.lz * 0.31 * u, ly, "center", 0.8)
+  text(ctx, `${Math.round(pct * 100)}% to Lvl ${s.level + 1}`, FUT(false, L.pz * u), L.pz * u, red ? "#FFC9B8" : "#7FD6CC", 0.95, cx, cy + L.py * u, "center", 60 * u)
+  const pa = paText(s.savings)
+  if (pa) text(ctx, pa, FUT(false, L.az * u), L.az * u, red ? "#FFB0A0" : GOLD_SOFT, 0.72, cx, cy + L.ay * u, "center", 60 * u)
 }
 function xpNextRow(ctx, s, cx, y, u, W) {              // under the level: next rank on the left, savings on the right
   text(ctx, track("NEXT"), FUT(false, 4.8 * u), 4.8 * u, "#7FD6CC", 0.85, cx - 73 * u, y - 0.2 * u, "left", 30 * u)
@@ -965,21 +1000,22 @@ function render(W, H, bg, s, source) {
       if (!CMP) text(ctx, track(fmtSavings(s.savings)), FUT(false, 5.6 * u), 5.6 * u, GOLD_SOFT, 0.62, cx, 128 * u, "center", W)
       else text(ctx, track(fmtSavings(s.savings)), FUT(false, 5.6 * u), 5.6 * u, GOLD_SOFT, 0.62, cx, 106 * u, "center", W)
     } else {
-    for (let i = 0; i < 36; i++) {                                   // faint tick marks, like a star dial
+    if (XP_RING === "comet") for (let i = 0; i < 36; i++) {                                   // faint tick marks, like a star dial
       const a = i / 36 * Math.PI * 2, r0 = R + 4.5 * u, r1 = R + (i % 9 === 0 ? 7.5 : 5.8) * u
       seg(ctx, cx + Math.cos(a) * r0, cy + Math.sin(a) * r0, cx + Math.cos(a) * r1, cy + Math.sin(a) * r1, i % 9 === 0 ? GOLD : SILVER, i % 9 === 0 ? 0.45 : 0.16, 0.5)
     }
     if (top) {                                                       // max level: gold halo + crystal sparkles
       arcStroke(ctx, cx, cy, R + 10 * u, Math.PI * 0.72, Math.PI * 2.28, GOLD_SOFT, 0.4, 0.6)   // open at the bottom, clear of "Level N"
     }
-    for (let i = 1; i <= 5; i++) arcStroke(ctx, cx, cy, R - (2.6 + i * 1.5) * u, 0, Math.PI * 2, "#000000", 0.13 * (1 - i / 6), 1.7 * u)   // soft inner shadow
-    arcStroke(ctx, cx, cy, R + 3.4 * u, 0, Math.PI * 2, "#FFFFFF", 0.07, 0.45)                  // hairline outer ring
-    for (let i = 0; i < 60; i++) {                                    // tiny inner tick marks
+    for (let i = 1; i <= 5; i++) (XP_RING === "comet" ? (r, h, al, w) => arcStroke(ctx, cx, cy, r, 0, Math.PI * 2, h, al, w) : (r, h, al, w) => ringStroke(ctx, cx, cy, r, h, al, w))(R - (2.6 + i * 1.5) * u, "#000000", 0.13 * (1 - i / 6), 1.7 * u)   // soft inner shadow
+    if (XP_RING === "comet") arcStroke(ctx, cx, cy, R + 3.4 * u, 0, Math.PI * 2, "#FFFFFF", 0.07, 0.45)                  // hairline outer ring
+    if (XP_RING === "comet") for (let i = 0; i < 60; i++) {                                    // tiny inner tick marks
       const a = i / 60 * Math.PI * 2, r0 = R - 5.4 * u, r1 = R - (i % 5 ? 6.5 : 7.6) * u
       seg(ctx, cx + Math.cos(a) * r0, cy + Math.sin(a) * r0, cx + Math.cos(a) * r1, cy + Math.sin(a) * r1, "#FFFFFF", i % 5 ? 0.09 : 0.2, 0.4)
     }
     const a0 = -Math.PI / 2, a1 = a0 + Math.PI * 2 * pct
-    xpOrbit(ctx, cx, cy, R, u, pct, RED, XS)
+    if (XP_RING === "halo") ringHalo(ctx, cx, cy, R, u, pct, RED)
+    else xpOrbit(ctx, cx, cy, R, u, pct, RED, XS)
     if (top) {
       const cr = ["#CFE0FA", "#D9CCF5", "#F3F4FA", "#FFE3A3"]
       ;[-60, 0, 35, 145, 180, 240].forEach((deg, i) => {
@@ -989,13 +1025,13 @@ function render(W, H, bg, s, source) {
       twinkle(ctx, cx - R * 0.95, cy - R * 0.95, 4.5 * u, 0.9); twinkle(ctx, cx + R * 1.0, cy + R * 0.9, 3.5 * u, 0.8)
     }
     if (XS === "planet") { const hr = R + 15 * u, hxx = cx + Math.cos(a1) * hr, hyy = cy + Math.sin(a1) * hr; xpChip(ctx, hxx, hyy, `${Math.round(pct * 100)}%`, u, RED) }
-    xpLabels(ctx, s, cx, cy, u, pct, CMP, RED)
-    {
+    xpLabels(ctx, s, cx, cy, u, pct, CMP, RED, LT)
+    if (false) {   // v3: the level now sits inside the ring
       const ly = (CMP ? 97 : 120) * u, nd = String(s.level).length, gw = 22 * u + 4.5 * u + nd * 8.6 * u, lx = cx - gw / 2
       text(ctx, track("LEVEL"), FUT(false, 6.6 * u), 6.6 * u, LT.text, 0.8, lx, ly + 2.6 * u, "left", 40 * u)
       glowText(ctx, String(s.level), FUT(true, 14.5 * u), 14.5 * u, LT.text, lx + 26.5 * u + nd * 4.3 * u, ly, "center", top ? 1.4 : 0.8)
     }
-    xpNextRow(ctx, s, cx, (CMP ? 107 : 131) * u, u, W)
+    // v3: no next-rank row; the p.a. rate now sits inside the ring
     }
     const sgap = (MED ? 46 : 50) * u
     statPanel(ctx, cx, sgap, (CMP ? 112.5 : 137.5) * u, H - 4 * u, u)
@@ -1278,6 +1314,9 @@ function medalCoins(n) {                                // 133 -> {100:1, 10:3, 
   n = Math.max(0, Math.floor(Number(n) || 0))
   return { 100: Math.min(9, Math.floor(n / 100)), 10: Math.floor((n % 100) / 10), 1: n % 10 }
 }
+// how much Milky Way the medals have built: 0 → plain dark sky, 33 → a band forming, ~130-200 → the full galaxy
+const GAL_GROW_K = 70
+const galaxyGrowth = (n) => n > 0 ? 1 - Math.exp(-n / GAL_GROW_K) : 0
 function medalTotal(s) {                                // optional medalsTotal key → gold + diamond + prismatic from the Widget tab
   if (!s) return 0
   if (s.medalsTotal != null) return s.medalsTotal
@@ -1358,15 +1397,55 @@ function drawMilkyWay(ctx, W, H, p, pal, s) {
     const fil = clamp((rid - 0.8) / 0.18, 0, 1) * Math.exp(-Math.pow(off / (s * 1.5), 2)) * 0.75
     return clamp((rift + split) * 1.05 + fil + 0.3 * I * fil, 0, 1)
   }
+  // ---- THE MEDALS BUILD THE GALAXY: medal slots are placed first (band coords), then every cloud/dust/star-cloud layer is weighted by
+  // mask(t, off) = global growth from the medal count + a local wisp of light around each medal star that is actually lit ----
+  const coins = medalCoins(medalTotal(s))
+  const rcx = 85 * u, rcy = (wide ? 66 : 50) * u, rcr = (wide ? 41 : 32) * u + 3 * u, py = (wide ? 134 : 110) * u
+  const blocked = (x, y, m) => Math.hypot(x - rcx, y - rcy) < rcr + m || (y > py - 16 * u - m && (!wide || x < 166 * u)) || x < 3 * u + m || x > W - 3 * u - m || y < 3 * u + m || y > H - 3 * u - m
+  const SZ = { 100: 12, 10: 8.5, 1: 5.2 }                                // keep-clear radius per star incl. its speck cluster (u)
+  const order = []
+  for (const d of MEDAL_DENOMS) for (let i = 0; i < MEDAL_SLOTS[d]; i++) order.push({ d, i })
+  const spots = []
+  order.forEach((S) => {
+  const q = rng(Math.floor(MWH(S.d * 31 + S.i, 37, 919) * 4294967295))
+  const sz = SZ[S.d] * u
+    let best = null
+    for (let tries = 0; tries < 260; tries++) {
+    const spread = tries < 120 ? 1 : 1.5                                                   // first along the band's heart, then a little wider
+    const t = (q() * 2 - 1) * L * 0.85, g = (q() + q() + q() - 1.5) / 0.5 * 0.55 * spread, off = g * sig * wob(t)
+    const [x, y] = at(t, off)
+      if (blocked(x, y, sz * 0.45) || (wide && x > 182 * u - sz * 0.6)) continue           // stars stay in the open sky left of the quest glass
+    const k = tries < 100 ? 1 : tries < 180 ? 0.8 : 0.6
+      if (spots.some((o) => !o.none && Math.hypot(o.x - x, o.y - y) < (o.sz + sz) * 0.62 * k)) continue
+      best = { t, off, x, y, sz }; break
+    }
+    for (let tries = 0; !best && tries < 400; tries++) {                                    // never drop a star: last resort, anywhere clear on the band
+    const t = (q() * 2 - 1) * L * 0.95, off = (q() * 2 - 1) * sig * 2.2, [x, y] = at(t, off)
+      if (blocked(x, y, sz * 0.25) || (wide && x > 182 * u)) continue
+      if (spots.some((o) => !o.none && Math.hypot(o.x - x, o.y - y) < (o.sz + sz) * 0.3)) continue
+      best = { t, off, x, y, sz }
+    }
+    spots.push({ ...S, q, ...(best || { none: true, sz }) })
+  })
+  const NMED = medalTotal(s), GROW = galaxyGrowth(NMED)
+  const WISP = { 100: [0.75, 46, 1.6], 10: [0.5, 26, 1.25], 1: [0.32, 14, 0.95] }      // peak, reach along the band (u), width (x sigma)
+  const lit = spots.filter((S) => !S.none && S.i < coins[S.d]).map((S) => ({ t: S.t, off: S.off, w: WISP[S.d][0], lt: WISP[S.d][1] * u, lo: WISP[S.d][2] * sig }))
+  const mask = (t, off) => {
+    let m = GROW * (0.25 + 0.75 * Math.exp(-Math.pow(off / (sig * 2.4), 2)))
+    for (const S of lit) { const a = (t - S.t) / S.lt, o = (off - S.off) / S.lo; if (a * a + o * o < 9) m += S.w * Math.exp(-a * a - o * o) * (1 - 0.6 * GROW) }
+    return clamp(m, 0, 1)
+  }
+  __BAND.grow = GROW; __BAND.n = NMED
   // ---- smooth base haze: cool blue-violet arms warming toward the bulge (no noise yet, so the band reads as one continuous river) ----
   for (let i = 0, n = wide ? 90 : 66; i <= n; i++) {
     const t = -L + 2 * L * i / n, s = sig * wob(t), b = bulge(t), [x, y] = at(t, 0)
-    const wm = clamp(Math.exp(-Math.pow((t - t0) / (L * 0.5), 2)) * 1.1, 0, 1)
-    ell(ctx, x, y, s * 2.2, s * 1.25, mixHex(M.cool, M.mid, 0.4 + 0.4 * wm), 0.022 * b * band)
-    ell(ctx, x, y, s * 1.4, s * 0.75, mixHex(M.mid, M.rose, wm * 0.7), 0.02 * b * band)
-    ell(ctx, x, y, s * 0.8, s * 0.42, mixHex(M.rose, M.warm, wm), 0.02 * b * band * (0.4 + wm))
+    const wm = clamp(Math.exp(-Math.pow((t - t0) / (L * 0.5), 2)) * 1.1, 0, 1), mk = mask(t, 0)
+    if (mk < 0.01) continue
+    ell(ctx, x, y, s * 2.2, s * 1.25, mixHex(M.cool, M.mid, 0.4 + 0.4 * wm), 0.022 * b * band * mk)
+    ell(ctx, x, y, s * 1.4, s * 0.75, mixHex(M.mid, M.rose, wm * 0.7), 0.02 * b * band * mk)
+    ell(ctx, x, y, s * 0.8, s * 0.42, mixHex(M.rose, M.warm, wm), 0.02 * b * band * (0.4 + wm) * mk)
   }
-  for (let i = 0; i < 9; i++) { const [kx, ky] = at(t0, 0); ell(ctx, kx, ky, (46 - i * 4.4) * u, (24 - i * 2.3) * u, i < 5 ? M.rose : M.warm, 0.012 * band * (1 + i * 0.35)) }
+  const mk0 = mask(t0, 0); if (mk0 > 0.01) for (let i = 0; i < 9; i++) { const [kx, ky] = at(t0, 0); ell(ctx, kx, ky, (46 - i * 4.4) * u, (24 - i * 2.3) * u, i < 5 ? M.rose : M.warm, 0.012 * band * (1 + i * 0.35) * mk0) }
   const st = (wide ? 2.5 : 2.3) * u
   // ---- glow + dust cells ----
   for (let t = -L; t <= L; t += st) {
@@ -1376,15 +1455,16 @@ function drawMilkyWay(ctx, W, H, p, pal, s) {
       const tt = t + (j1 - 0.5) * st * 0.9, oo = off + (j2 - 0.5) * st * 0.9
       const [x, y] = at(tt, oo)
       if (x < -6 * u || x > W + 6 * u || y < -6 * u || y > H + 6 * u) continue
+      const mk = mask(tt, oo); if (mk < 0.01) continue
       const g = oo / s, env = Math.exp(-g * g * 0.5)
       const clump = 0.72 + 0.7 * fbm(tt / (24 * u), oo / (9 * u), 3, 4)             // cloudy, with irregular edges
       const edge = 0.75 + 0.5 * fbm(tt / (9 * u), oo / (4 * u), 6, 3)
-      let d = env * b * clump * edge
+      let d = env * b * clump * edge * mk
       const dust = dustAt(tt, oo)
       d *= 1 - 0.88 * dust
       const cw = Math.exp(-Math.pow((tt - t0) / (L * 0.22), 2) - Math.pow(oo / (sig * 1.35), 2))     // the bulge itself
       const bw = Math.exp(-Math.pow((tt - t0) / (L * 0.5), 2)) * 0.55
-      d += cw * 0.9 * (1 - 0.8 * dust)
+      d += cw * 0.9 * (1 - 0.8 * dust) * mk
       if (d > 0.03) {
         let c = mixHex(M.cool, M.mid, clamp(0.35 + 0.65 * (1 - Math.abs(g) / 2.2) + 0.25 * (tt < t0 ? 0.3 : -0.1), 0, 1))
         const rose = clamp((fbm(tt / (50 * u), oo / (20 * u), 5, 3) - 0.46) * 3.4, 0, 1) * (0.3 + bw)
@@ -1393,7 +1473,7 @@ function drawMilkyWay(ctx, W, H, p, pal, s) {
         ell(ctx, x, y, st * 2.6, st * 2.0, c, 0.0135 * d * band)
         ell(ctx, x, y, st * 1.2, st * 0.95, mixHex(c, "#FFFFFF", 0.18 + 0.3 * cw), 0.026 * d * band * (0.5 + 0.9 * edge))
       }
-      if (dust > 0.28) ell(ctx, x, y, st * 1.5, st * 1.1, "#02020A", 0.21 * dust * (0.8 + 0.4 * I))
+      if (dust > 0.28) ell(ctx, x, y, st * 1.5, st * 1.1, "#02020A", 0.21 * dust * (0.8 + 0.4 * I) * mk)
     }
   }
   // ---- faint nebula patches: an emission knot (rose), a reflection wisp (teal / haze) and a blue veil ----
@@ -1404,8 +1484,8 @@ function drawMilkyWay(ctx, W, H, p, pal, s) {
     for (let i = 0; i < 20; i++) {
       const a1 = nq() * 6.283, rr = Math.sqrt(nq()) * rad * u
       const [x, y] = at(L * tf + Math.cos(a1) * rr * 1.5, sig * of + Math.sin(a1) * rr)
-      const kk = 0.5 + nq()
-      ell(ctx, x, y, rad * 0.5 * u * kk, rad * 0.36 * u * kk, c, a * band * (1 - 0.6 * I * 0))
+      const kk = 0.5 + nq(), mk = mask(L * tf + Math.cos(a1) * rr * 1.5, sig * of + Math.sin(a1) * rr)
+      if (mk > 0.01) ell(ctx, x, y, rad * 0.5 * u * kk, rad * 0.36 * u * kk, c, a * band * mk)
     }
   })
   // ---- H-alpha emission knots (pink) and a faint teal reflection wisp, patchy rather than round ----
@@ -1417,8 +1497,8 @@ function drawMilkyWay(ctx, W, H, p, pal, s) {
       const a1 = hq() * 6.283, rr = Math.sqrt(hq()) * rad, tt = L * tf + Math.cos(a1) * rr * 1.6, oo = sig * of + Math.sin(a1) * rr
       const lumpy = clamp(fbm(tt / (6 * u), oo / (4 * u), 31, 3) * 1.8 - 0.55, 0, 1)
       if (lumpy <= 0) continue
-      const [x, y] = at(tt, oo), kk = 0.4 + 0.8 * hq()
-      ell(ctx, x, y, rad * 0.32 * kk, rad * 0.22 * kk, hc, (teal ? 0.02 : 0.03) * lumpy * band * (1 - dustAt(tt, oo) * 0.8))
+      const [x, y] = at(tt, oo), kk = 0.4 + 0.8 * hq(), mk = mask(tt, oo)
+      if (mk > 0.01) ell(ctx, x, y, rad * 0.32 * kk, rad * 0.22 * kk, hc, (teal ? 0.02 : 0.03) * lumpy * band * mk * (1 - dustAt(tt, oo) * 0.8))
     }
   }
   // ---- thin dark dust filaments layered over the bright clouds (wispy, broken, slightly curved) ----
@@ -1429,8 +1509,8 @@ function drawMilkyWay(ctx, W, H, p, pal, s) {
       const f = j / m, t = L * (f0 + len * f), s0 = sig * wob(t), off = (o0 + cv * Math.sin(f * 3.14) + 0.05 * Math.sin(j * 0.9 + k)) * s0
       const brk = fbm(t / (8 * u), k * 3.1, 41, 2)
       if (brk < 0.42) continue
-      const [x, y] = at(t, off), w = (0.6 + 1.1 * brk) * u
-      ell(ctx, x, y, w * 2.4, w, "#03030A", 0.07 * (brk - 0.35) * Math.sin(f * 3.14))
+      const [x, y] = at(t, off), w = (0.6 + 1.1 * brk) * u, mk = mask(t, off)
+      if (mk > 0.01) ell(ctx, x, y, w * 2.4, w, "#03030A", 0.07 * (brk - 0.35) * Math.sin(f * 3.14) * mk)
     }
   }
   // ---- fine grain: thousands of faint unresolved stars that make the clouds look grainy (tiny rects, one colour per batch = cheap) ----
@@ -1444,18 +1524,21 @@ function drawMilkyWay(ctx, W, H, p, pal, s) {
         const env = Math.exp(-g * g * 0.35) * bulge(t)
         if (gq() > env * (0.55 + 0.6 * fbm(t / (10 * u), off / (5 * u), 51, 3))) continue
         if (gq() < dustAt(t, off) * 0.9) continue
+        if (MWH(bi, i, 61) > mask(t, off)) continue
         const [x, y] = at(t, off)
         ctx.fillRect(new Rect(x, y, px, px))
       }
     }
     // a gentle noise texture over the whole sky (sensor grain), very faint
-    ctx.setFillColor(col("#9AA0B8", 0.035))
+    ctx.setFillColor(col("#9AA0B8", 0.012 + 0.023 * GROW))
     for (let i = 0, n = wide ? 2600 : 1500; i < n; i++) ctx.fillRect(new Rect(gq() * W, gq() * H, px, px))
   }
   // ---- stars: magnitude power law · colour temperature · clustering ----
   const NS = Math.round((wide ? 6500 : 4200)), tint = (k) => { for (const [lim, c] of STAR_TEMP) if (k <= lim) return c; return "#FFFFFF" }
   const clustered = (t, off) => fbm(t / (14 * u), off / (6 * u), 20, 3)
+  let sid = 0
   const putStar = (t, off, boost) => {
+    const vis = MWH(sid++, 7, 73) <= mask(t, off)
     const [x, y] = at(t, off)
     if (x < 1 || x > W - 1 || y < 1 || y > H - 1) return
     const s = sig * wob(t), g = off / s, core = Math.exp(-g * g * 0.5) * bulge(t)
@@ -1465,6 +1548,7 @@ function drawMilkyWay(ctx, W, H, p, pal, s) {
     const a = clamp((0.16 + r() * 0.5 + mag * 0.5) * (0.5 + 0.9 * core) * (1 - 0.85 * dust) * boost, 0, 0.97)
     if (a < 0.04) return
     let c = tint(r()); if (I > 0) c = redStar(mixHex(c, pal.star[Math.floor(r() * pal.star.length)], 0.55 + 0.3 * I), I, 0.9)
+    if (!vis) return
     if (mag > 0.3) dot(ctx, x, y, rad * 3.2, c, a * 0.09)
     dot(ctx, x, y, rad, c, a)
   }
@@ -1489,34 +1573,6 @@ function drawMilkyWay(ctx, W, H, p, pal, s) {
   // ---- medal stars: every slot (denomination x index) has a fixed spot in band coordinates, worked out for ALL 27 slots in one fixed order,
   // so a new medal only adds a small star or merges (10 small -> 1 big, 10 big -> 1 superior) and nothing else jumps; they float with the flow
   {
-    const coins = medalCoins(medalTotal(s))
-    const rcx = 85 * u, rcy = (wide ? 66 : 50) * u, rcr = (wide ? 41 : 32) * u + 3 * u, py = (wide ? 134 : 110) * u
-    const blocked = (x, y, m) => Math.hypot(x - rcx, y - rcy) < rcr + m || (y > py - 16 * u - m && (!wide || x < 166 * u)) || x < 3 * u + m || x > W - 3 * u - m || y < 3 * u + m || y > H - 3 * u - m
-    const SZ = { 100: 12, 10: 8.5, 1: 5.2 }                                // keep-clear radius per star incl. its speck cluster (u)
-    const order = []
-    for (const d of MEDAL_DENOMS) for (let i = 0; i < MEDAL_SLOTS[d]; i++) order.push({ d, i })
-    const spots = []
-    order.forEach((S) => {
-      const q = rng(Math.floor(MWH(S.d * 31 + S.i, 37, 919) * 4294967295))
-      const sz = SZ[S.d] * u
-      let best = null
-      for (let tries = 0; tries < 260; tries++) {
-        const spread = tries < 120 ? 1 : 1.5                                                   // first along the band's heart, then a little wider
-        const t = (q() * 2 - 1) * L * 0.85, g = (q() + q() + q() - 1.5) / 0.5 * 0.55 * spread, off = g * sig * wob(t)
-        const [x, y] = at(t, off)
-        if (blocked(x, y, sz * 0.45) || (wide && x > 182 * u - sz * 0.6)) continue           // stars stay in the open sky left of the quest glass
-        const k = tries < 100 ? 1 : tries < 180 ? 0.8 : 0.6
-        if (spots.some((o) => !o.none && Math.hypot(o.x - x, o.y - y) < (o.sz + sz) * 0.62 * k)) continue
-        best = { t, off, x, y, sz }; break
-      }
-      for (let tries = 0; !best && tries < 400; tries++) {                                    // never drop a star: last resort, anywhere clear on the band
-        const t = (q() * 2 - 1) * L * 0.95, off = (q() * 2 - 1) * sig * 2.2, [x, y] = at(t, off)
-        if (blocked(x, y, sz * 0.25) || (wide && x > 182 * u)) continue
-        if (spots.some((o) => !o.none && Math.hypot(o.x - x, o.y - y) < (o.sz + sz) * 0.3)) continue
-        best = { t, off, x, y, sz }
-      }
-      spots.push({ ...S, q, ...(best || { none: true, sz }) })
-    })
     const flow = 2 * Math.PI * hr / 24, skip = (x, y) => blocked(x, y, 0.5 * u)
     // drawn later, on top of the eclipse and the chaos tint (render calls this), so chaos bleeds them blood red but never hides them
     __STAR_DRAW = () => spots.slice().reverse().forEach((S) => {
@@ -1534,13 +1590,13 @@ function drawMilkyWay(ctx, W, H, p, pal, s) {
     for (let j = 0; j <= m; j++) {
       const t = L * (f0 + (f1 - f0) * j / m), s = sig * wob(t), off = (o + 0.07 * Math.sin(j * 0.55 + i * 2)) * s * 1.6
       const [x, y] = at(t, off), w = (3.4 + 2.2 * Math.sin(j * 0.31 + i)) * u * k
-      ell(ctx, x, y, w * 1.9, w * 0.8, "#02020A", 0.075 + 0.06 * I)
+      ell(ctx, x, y, w * 1.9, w * 0.8, "#02020A", (0.075 + 0.06 * I) * mask(t, off))
     }
   }
   // ominous glow along the spine of the band (chaos only)
   if (I > 0) for (let i = 0, n = wide ? 86 : 64; i <= n; i++) {
     const t = -L + 2 * L * i / n, s = sig * wob(t), b = bulge(t), [x, y] = at(t, 0)
-    ell(ctx, x, y, s * 1.6, s * 0.2, pal.glow, 0.028 * I * b); ell(ctx, x, y, s * 1.0, s * 0.09, pal.haze[2], 0.02 * I * b)
+    const mk = mask(t, 0); ell(ctx, x, y, s * 1.6, s * 0.2, pal.glow, 0.028 * I * b * mk); ell(ctx, x, y, s * 1.0, s * 0.09, pal.haze[2], 0.02 * I * b * mk)
   }
   // faint ember specks drifting around the band (chaos only)
   if (pal.ember.length) {
@@ -1578,9 +1634,9 @@ function reasonZones(W, H, x, y, pad) {            // true where text/ring/glass
 function reasonsBand(ctx, W, H, pal) {           // behind everything: galactic core, creeping eclipse, cleansed gold stars
   const R = REASON(), B = __BAND, u = B.u, c = pal.I, wide = B.wide
   // XP lights the galactic core (the bright bulge at the band's lower-left)
-  const t0 = B.t0, [kx, ky] = bandAt(t0, 0), g = (0.35 + 0.95 * R.xp) * (1 - 0.82 * Math.min(1, c))
-  for (let i = 0; i < 9; i++) dot(ctx, kx, ky, (34 - i * 3.3) * u, i < 5 ? "#FFE2B0" : "#FFF3D6", 0.011 * g * (1 + i * 0.5))
-  dot(ctx, kx, ky, 2.4 * u, "#FFF8E8", 0.5 * g)
+  const t0 = B.t0, [kx, ky] = bandAt(t0, 0), g = (0.35 + 0.95 * R.xp) * (1 - 0.82 * Math.min(1, c)) * (B.n > 0 ? 0.3 + 0.7 * B.grow : 0)   // the core needs medals to shine
+  if (g > 0) for (let i = 0; i < 9; i++) dot(ctx, kx, ky, (34 - i * 3.3) * u, i < 5 ? "#FFE2B0" : "#FFF3D6", 0.011 * g * (1 + i * 0.5))
+  if (g > 0) dot(ctx, kx, ky, 2.4 * u, "#FFF8E8", 0.5 * g)
   // creeping eclipse: dust spreads from the far end of the band toward the core, with a faint blood-red leading edge
   if (c > 0) {
     const reach = 0.35 + 1.25 * c
