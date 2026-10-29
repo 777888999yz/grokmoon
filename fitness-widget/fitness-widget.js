@@ -1,4 +1,4 @@
-// Mister 14 · Fitness Quest widget · v9 (badges + medals build the Milky Way, 8 realistic astrophotography star designs per tier + realistic chaos looks, random-but-stable, twinkle + milestone flare: no medals = dark sky; Train | Cook bar, chaos blood theme)
+// Mister 14 · Fitness Quest widget · v11 (aligned stat cells: flame + number + label on one axis; real widget size + inset quest panel, clear star tiers; badges + medals build the Milky Way, 8 realistic astrophotography star designs per tier + realistic chaos looks, random-but-stable, twinkle + milestone flare: no medals = dark sky; Train | Cook bar, chaos blood theme)
 // Scriptable · small + medium · built-in galaxy background drawn live (no setup needed)
 //
 // SETUP: run this script once in the Scriptable app, then add a small Scriptable widget to your
@@ -611,15 +611,38 @@ function statPanel(ctx, cx, gap, y0, y1, u) {           // one glass bar under t
   const a0 = y0 + 4 * u, a1 = y0 + 24 * u, n = 10           // subtle centre divider beside the numbers only: a hairline that fades out at both ends
   for (let i = 0; i < n; i++) { const f = 1 - Math.abs((i + 0.5) / n * 2 - 1); seg(ctx, cx, a0 + (a1 - a0) * i / n, cx, a0 + (a1 - a0) * (i + 1) / n, "#FFFFFF", 0.03 + 0.11 * f, 0.5) }
 }
+// v11 aligned stat cells. Every cell has ONE centre axis (cx ± 0.75·gap, mirrored around the divider):
+//   row 1 = [flame][3.5pt][number]   centred by measured width; flame visible height ≈ number cap height, both centred on the cap line
+//   row 2 = [badge][label]            centred by measured width; the trailing ✓ / dot hangs outside the centring
+// Futura metrics (checked on the phone screenshot): cap height 0.69em, cap centre 0.25em above the text() y line; digits are drawn in
+// fixed 0.56em slots (tabular) so 1-, 2- and 3-digit streaks stay centred. Labels: tracked caps ≈ 0.6em per letter (TRAIN 3.0em, COOK 3.0em).
+const NUM = { fz: 11.5, cap: 0.69, capOff: 0.245, slot: 0.56, ink: 0.47 }
+const LABEL_EM = { TRAIN: 3.0, COOK: 3.0 }
+// measured flame ink (in units of fire()'s h): visible top above the base, and visible width, per flame tier
+const FL_TOP = (t) => t <= 3 ? 0.78 : t <= 16 ? 1.2 : 1.55
+const FL_W = (t) => t <= 2 ? 0.32 : t === 3 ? 0.5 : t <= 9 ? 0.68 : t <= 11 ? 0.84 : 1.13
+function digitsAt(ctx, str, t, x0, yc, u) {                     // draw str left-to-right in tabular slots; x0 = left ink edge, yc = cap centre
+  const fz = NUM.fz * u, sl = NUM.slot * fz, y = yc + NUM.capOff * fz
+  const f = t >= 8 ? FUT(true, fz) : FUT(false, fz), hex = t >= 6 ? GOLD_BRIGHT : t >= 3 ? GOLD : GOLD_SOFT
+  str.split("").forEach((ch, i) => {
+    const x = x0 + NUM.ink * fz / 2 + i * sl
+    if (t >= 6) glowText(ctx, ch, f, fz, hex, x, y, "center", t >= 8 ? 1.6 : 1)
+    else text(ctx, ch, f, fz, hex, 0.97, x, y, "center", 40 * u)
+  })
+}
+const numInkW = (str, u) => ((str.length - 1) * NUM.slot + NUM.ink) * NUM.fz * u
 function statRow(ctx, s, cx, y, gap, u) {
-  const SM = {}
-  const items = [["train", SM.train != null ? SM.train : s.exercise, "TRAIN"], ["cook", SM.cook != null ? SM.cook : s.cooking, "COOK"]]
+  const yc = y - 1.5 * u, capH = NUM.cap * NUM.fz * u, ly = yc + 11.5 * u   // number cap centre, label cap centre
+  const items = [["train", s.exercise, "TRAIN"], ["cook", s.cooking, "COOK"]]
+  const q = LIVE.quest ? questState() : null
   items.forEach(([kind, v, label], i) => {
-    const x = cx + (i ? 0.75 : -0.75) * gap, T = kind === "medal" ? 0 : flameTier(v), iw = (9 + Math.min(6, T * 0.4)) * u, gp = 3 * u, nw = String(v).length * 6.6 * u
-    const left = x - (iw + gp + nw) / 2, ix = left + iw / 2, nx = left + iw + gp
-    if (kind === "medal") { badgeMedal(ctx, ix, y, u, v); badgeNumber(ctx, v, nx, y + 0.5 * u, u) }
-    else { streakFlame(ctx, ix, y, u, v, kind); streakNumber(ctx, v, nx, y + 0.5 * u, u) }
-    text(ctx, track(label), FUT(false, 5.2 * u), 5.2 * u, SILVER, 0.5, x, y + 11.6 * u, "center", 60 * u)
+    const x = cx + (i ? 0.75 : -0.75) * gap, T = flameTier(v), str = String(v)
+    const top = FL_TOP(T), vis = capH * (1 + 0.025 * Math.min(T, 14)), h = vis / top, fw = FL_W(T) * h, gp = 3.5 * u
+    const left = x - (fw + gp + numInkW(str, u)) / 2
+    fire(ctx, left + fw / 2, yc + vis / 2, h, kind, T, (v * 7 + (kind === "train" ? 1 : 2)) + fireSeed(), v > 0)
+    digitsAt(ctx, str, T >= 18 ? 8 : T >= 10 ? 6 : T >= 4 ? 3 : 0, left + fw + gp, yc, u)
+    if (q) questLabel(ctx, kind, label, x, ly, u, q.a[i], QPAL(q.n))
+    else text(ctx, track(label), FUT(false, 5.2 * u), 5.2 * u, SILVER, 0.5, x, ly + 0.245 * 5.2 * u, "center", 60 * u)
   })
 }
 // savings rate as "+2.50% P.A." (2 decimals, 3 only when the value needs them)
@@ -1035,7 +1058,7 @@ function render(W, H, bg, s, source) {
     }
     const sgap = (MED ? 46 : 50) * u
     statPanel(ctx, cx, sgap, (CMP ? 112.5 : 137.5) * u, H - 4 * u, u)
-    statRow(ctx, s, cx, (CMP ? 123 : 147.5) * u, sgap, u)
+    statRow(ctx, s, cx, (CMP ? (CH.lock ? 123 : LIVE.quest ? 127 : 123) : 147.5) * u, sgap, u)
   }
   chaosPanel(ctx, W, H, s)
   statusDot(ctx, W, u, source)
@@ -1449,26 +1472,35 @@ function sliver(ctx, x, y, a, r0, r1, w, hex, al) {          // a short tapering
 const SPIKE_A = 0.21                                                       // one spike angle for every star (one telescope)
 const gauss = (q) => (q() + q() + q() - 1.5) * 1.15
 const powM = (q, lo, hi) => lo + hi * Math.pow(q(), 3.2)                   // power-law brightness: a few bright, many faint
-function spikes(ctx, x, y, u, m, hex, tier, pd) {                          // real diffraction spikes: thin, tapering, faint, length ∝ brightness
-  const len = (3 + 7.5 * m) * u, w = (0.06 + 0.07 * m) * u, a = clamp(0.14 + 0.22 * m, 0, 0.45) * pd
+// v10 tier hierarchy, in points at 1x (p = 1pt): small = faint pinpoint, big = 2x core + 4 spikes, superior = 3-4x core, big bloom, 6+2 JWST spikes
+// brightness ~ 10% : 40% : 100%, glow radius ~ 1 : 2.5 : 6; everything in the Milky Way stays below the small tier
+const TIER_STAR = {
+  1:   { core: 0.5, cpsf: 0.36, ca: 0.4, glow: 0.5, ga: 0.1, bloom: 0, ba: 0, spike: 0 },
+  10:  { core: 1.0, cpsf: 0.8, ca: 0.78, glow: 1.25, ga: 0.3, bloom: 2.6, ba: 0.05, spike: 7 },
+  100: { core: 1.75, cpsf: 1.3, ca: 0.97, glow: 3.0, ga: 0.6, bloom: 6.5, ba: 0.15, spike: 17 },
+}
+function spikes(ctx, x, y, p, len, hex, tier, pd) {                       // real diffraction spikes: thin, tapering; len = pt from the centre
+  const L = len * p, w = (tier === 100 ? 0.34 : 0.28) * p, a = (tier === 100 ? 0.4 : 0.38) * pd
   const angs = tier === 100 ? [0, Math.PI / 3, -Math.PI / 3] : [0, Math.PI / 2]
-  for (const t of angs) spikeAt(ctx, x, y, SPIKE_A + Math.PI / 2 + t, len, w, hex, a)
-  if (tier === 100) spikeAt(ctx, x, y, SPIKE_A, len * 0.4, w * 0.75, hex, a * 0.55)   // JWST's two short struts
+  for (const t of angs) spikeAt(ctx, x, y, SPIKE_A + Math.PI / 2 + t, L, w, hex, a)
+  if (tier === 100) spikeAt(ctx, x, y, SPIKE_A, L * 0.4, w * 0.75, hex, a * 0.55)   // JWST's two short struts
 }
 function realStar(ctx, x, y, u, m, cl, tier, pd, fl = 0) {                 // cl = [core, glow, bloom]: hot white centre, colour only in the glow
-  const sg = (0.3 + 0.72 * m) * u
-  if (fl) { psf(ctx, x, y, sg * 9, cl[2], 0.2 * pd, 12); psf(ctx, x, y, sg * 4, cl[1], 0.25 * pd, 10) }   // milestone flare: a soft bloom
-  if (m > 0.35) psf(ctx, x, y, sg * 3.4, cl[2], 0.07 * m * pd, 7)
-  psf(ctx, x, y, sg * 1.2, cl[1], clamp(0.48 * m, 0.08, 0.72) * pd, 7)
-  if (tier === 100) softRing(ctx, x, y, sg * 2.8, cl[1], 0.028 * pd, 0.2 * u)   // a faint airy ring
-  if (tier >= 10 && m > 0.25) spikes(ctx, x, y, u, m * (fl ? 1.35 : 1), cl[1], tier, pd)
-  psf(ctx, x, y, sg * 0.42, cl[0], clamp(0.72 + 0.2 * m, 0, 0.95) * pd, 5)
-  dot(ctx, x, y, Math.max(0.09 * u, sg * 0.16), cl[0], pd)
+  const T = TIER_STAR[tier] || TIER_STAR[1], p = u / 1.5, k = clamp(m, 0.12, 1.4), z = Math.sqrt(k) * p
+  if (fl) { psf(ctx, x, y, T.glow * z * 3.2, cl[2], 0.2 * pd, 12); psf(ctx, x, y, T.glow * z * 1.6, cl[1], 0.25 * pd, 10) }   // milestone flare: a soft bloom
+  if (T.bloom) psf(ctx, x, y, T.bloom * z, cl[2], T.ba * k * pd, 9)
+  psf(ctx, x, y, T.glow * z, cl[1], clamp(T.ga * k, 0.04, 0.8) * pd, 7)
+  if (tier === 100) softRing(ctx, x, y, T.glow * z * 1.9, cl[1], 0.05 * pd, 0.3 * p)   // a faint airy ring
+  if (T.spike && k > 0.3) spikes(ctx, x, y, p, T.spike * Math.min(1.15, k) * (fl ? 1.3 : 1), cl[1], tier, pd * Math.min(1, k))
+  psf(ctx, x, y, T.cpsf * z, cl[0], clamp(T.ca * (0.7 + 0.3 * k), 0, 0.96) * pd, 5)
+  dot(ctx, x, y, T.core * z * 0.62, cl[0], clamp(T.ca + 0.1, 0, 1) * pd)
 }
-function speck(ctx, x, y, u, m, c, pd, tier) {                             // a field star: soft glow + tiny white-ish centre, size ∝ brightness
-  psf(ctx, x, y, (0.2 + 0.75 * m) * u, c, clamp(0.16 + 0.95 * m, 0, 0.85) * pd, 4)
-  dot(ctx, x, y, (0.07 + 0.2 * m) * u, mixHex(c, "#FFFFFF", 0.55), clamp(0.25 + 1.3 * m, 0, 1) * pd)
-  if (tier >= 10 && m > 0.3) spikes(ctx, x, y, u * 0.5, m * 0.6, c, tier, pd * 0.7)
+const SPECK_K = { 1: 0.55, 10: 0.8, 100: 1 }
+function speck(ctx, x, y, u, m, c, pd, tier) {                             // a field star: always fainter and smaller than the small medal tier
+  const p = u / 1.5, f = SPECK_K[tier] || 1, mm = clamp(m, 0, 0.6)
+  psf(ctx, x, y, (0.22 + 0.35 * mm) * p, c, clamp(0.05 + 0.3 * mm, 0, 0.22) * f * pd, 4)
+  dot(ctx, x, y, (0.1 + 0.22 * mm) * p, mixHex(c, "#FFFFFF", 0.5), clamp(0.08 + 0.45 * mm, 0, 0.32) * f * pd)
+  if (tier === 100 && m > 0.35) spikes(ctx, x, y, p, 2.5 * m, c, 10, pd * 0.45)
 }
 function nebula(ctx, x, y, R, cA, cB, a, q, ex, ang, n, skip) {             // soft, clumpy gas: many faint Gaussian puffs
   const ca = Math.cos(ang), sa = Math.sin(ang)
@@ -1546,9 +1578,9 @@ function medalCluster(ctx, x, y, u, d, I, seed, pd = 1, tw = 1, ang = 0, skip = 
   for (const [cx, cy, m, k] of v.comp || []) {
     const [sx, sy] = P(cx, cy), c = SC[k] || [v.core, v.halo, v.bloom]
     if (skip && skip(sx, sy)) continue
-    realStar(ctx, sx, sy, u, m * { 1: 0.62, 10: 0.88, 100: 1.05 }[d], [B(c[0], 0.45), B(c[1]), B(c[2])], d, pd, 0)
+    realStar(ctx, sx, sy, u, m * 0.75, [B(c[0], 0.45), B(c[1]), B(c[2])], d, pd, 0)
   }
-  const m = (v.m || 1) * { 1: 0.78, 10: 1.0, 100: 1.16 }[d] * tw
+  const m = clamp(v.m || 1, 0.8, 1.15) * tw
   if (!v.nostar) realStar(ctx, x, y, u, m, [B(v.core, 0.45), B(v.halo), B(v.bloom)], d, pd, fl)
   else if (fl) psf(ctx, x, y, R * 1.2, B(v.bloom), 0.2 * pd, 12)
   for (const ln of v.dust || []) { const [lx, ly] = P(ln.at[0], ln.at[1]); dustLane(ctx, lx, ly, ln.len * R, ln.w * R, th + ln.ang, ln.a * pd, q, skip) }
@@ -1745,12 +1777,12 @@ function drawMilkyWay(ctx, W, H, p, pal, s) {
     const s = sig * wob(t), g = off / s, core = Math.exp(-g * g * 0.5) * bulge(t)
     const dust = dustAt(t, off), k = r()
     const mag = Math.pow(k, 9)                                                    // few bright, very many faint
-    const rad = (0.15 + mag * 0.62) * u
-    const a = clamp((0.16 + r() * 0.5 + mag * 0.5) * (0.5 + 0.9 * core) * (1 - 0.85 * dust) * boost, 0, 0.97)
+    const rad = (0.12 + mag * 0.2) * u
+    const a = clamp((0.14 + r() * 0.4 + mag * 0.3) * (0.5 + 0.9 * core) * (1 - 0.85 * dust) * boost, 0, 0.3)
     if (a < 0.04) return
     let c = tint(r()); if (I > 0) c = redStar(mixHex(c, pal.star[Math.floor(r() * pal.star.length)], 0.55 + 0.3 * I), I, 0.9)
     if (!vis) return
-    if (mag > 0.3) dot(ctx, x, y, rad * 3.2, c, a * 0.09)
+    if (mag > 0.3) dot(ctx, x, y, rad * 2.4, c, a * 0.07)
     dot(ctx, x, y, rad, c, a)
   }
   for (let i = 0, got = 0; i < NS * 3 && got < NS; i++) {
@@ -1769,7 +1801,7 @@ function drawMilkyWay(ctx, W, H, p, pal, s) {
   for (let i = 0; i < (wide ? 190 : 100); i++) {
     const x = r() * W, y = r() * H, k = r()
     let c = tint(r()); if (I > 0) c = redStar(mixHex(c, pal.star[Math.floor(r() * pal.star.length)], 0.6), I, 0.9)
-    dot(ctx, x, y, (0.14 + Math.pow(k, 6) * 0.55) * u, c, 0.12 + r() * 0.5)
+    dot(ctx, x, y, (0.12 + Math.pow(k, 6) * 0.16) * u, c, 0.07 + r() * 0.22)
   }
   // ---- medal stars: every slot (denomination x index) has a fixed spot in band coordinates, worked out for ALL 27 slots in one fixed order,
   // so a new medal only adds a small star or merges (10 small -> 1 big, 10 big -> 1 superior) and nothing else jumps; they float with the flow
@@ -2534,32 +2566,48 @@ function panelQuest(ctx, W, H, u) {
     const y = ys[i], d = done[i]
     if (d) { dot(ctx, nx, y, 11 * u, pal.glow, 0.1); dot(ctx, nx, y, 7.6 * u, pal.glow, 0.2); dot(ctx, nx, y, 6.2 * u, pal.done, 1); tick(ctx, nx, y, 5.6 * u, "#08141A", 1, 1.3 * u) }
     else { dot(ctx, nx, y, 6 * u, "#0A0A12", 0.9); strokeEll(ctx, nx, y, 6 * u, SILVER, 0.3, 0.9 * u) }
-    questIcon(ctx, kind, 230 * u, y - (kind === "cook" ? 2.5 : 0) * u, 22 * u, d, pal)
+    questBadge(ctx, kind, 230 * u, y, 10.5 * u, d, pal, u)
     text(ctx, tr(cap), FUT(false, 4.7 * u), 4.7 * u, d ? pal.acc : SILVER, d ? 0.9 : 0.4, 246 * u, y - 5.4 * u, "left", 70 * u)
     text(ctx, label, FUT(false, 9.4 * u), 9.4 * u, d ? pal.name : SILVER, d ? 1 : 0.55, 246 * u, y + 2.8 * u, "left", 80 * u)
     textR(ctx, tr(d ? yes : no), FUT(true, 5.2 * u), 5.2 * u, d ? pal.acc : SILVER, d ? 0.95 : 0.4, x1, y, 56 * u)
   })
-  const by = 131 * u, bx1 = x1, fx = x0 + (bx1 - x0) * n / 2
-  seg(ctx, x0, by, bx1, by, SILVER, 0.16, 2.2 * u)
-  if (n > 0) { seg(ctx, x0, by, fx, by, pal.glow, 0.22, 6 * u); seg(ctx, x0, by, fx, by, pal.acc, 1, 2.2 * u); dot(ctx, fx, by, 3.4 * u, pal.glow, 0.25); dot(ctx, fx, by, 1.5 * u, "#FFFFFF", 0.9) }
-  seg(ctx, (x0 + bx1) / 2, by - 2.4 * u, (x0 + bx1) / 2, by + 2.4 * u, "#05050B", 0.9, 1.2 * u)
+  questBar(ctx, x0, x1, 131 * u, u, done, pal)
   seg(ctx, x0, 142 * u, x1, 142 * u, "#FFFFFF", 0.07, 0.5)
   quoteLine(ctx, x0, x1, 154 * u, u, SILVER, 0.78, pal.acc)
 }
 // small strip when no chaos locks: the divider doubles as the progress bar; chips carry the same flames
+// v10 small quest strip: the 2 streak cells above already carry each quest's done mark; this adds a quiet label + a 2-segment bar,
+// all inset inside the glass panel (panel = W/2 ± 75u, content = W/2 ± 66u) so nothing can sit near the widget's edge
 function stripQuest(ctx, W, H, u) {
-  const { a: done, n } = questState(), pal = QPAL(n)
-  const x0 = 16 * u, x1 = W - 16 * u, fx = x0 + (x1 - x0) * n / 2
-  seg(ctx, x0, 140 * u, x1, 140 * u, SILVER, 0.16, 1.2 * u)
-  if (n > 0) { seg(ctx, x0, 140 * u, fx, 140 * u, pal.glow, 0.22, 5 * u); seg(ctx, x0, 140 * u, fx, 140 * u, pal.acc, 1, 1.2 * u); dot(ctx, fx, 140 * u, 2.4 * u, pal.glow, 0.28); dot(ctx, fx, 140 * u, 1 * u, "#FFFFFF", 0.9) }
-  text(ctx, tr("today's quest"), FUT(true, 5.8 * u), 5.8 * u, pal.acc, 1, x0, 146.4 * u, "left", 90 * u)
-  textR(ctx, `${n}/2`, FUT(true, 8 * u), 8 * u, n ? pal.name : SILVER, n ? 1 : 0.55, x1, 146 * u, 30 * u)
-  QUEST_ROWS.forEach(([cap, label, kind], i) => {
-    const x = x0 + 2 * u + i * 66 * u, y = 157.2 * u, d = done[i]
-    questIcon(ctx, kind, x + 6 * u, y - (kind === "cook" ? 1.4 : 0) * u, 12 * u, d, pal)
-    text(ctx, tr(label), FUT(true, 5.8 * u), 5.8 * u, d ? pal.name : SILVER, d ? 1 : 0.5, x + 15 * u, y, "left", 36 * u)
-    if (d) tick(ctx, x + 39 * u, y, 3.2 * u, pal.acc, 1, 0.9 * u)
+  const { a: done, n } = questState(), pal = QPAL(n), x0 = W / 2 - 66 * u, x1 = W / 2 + 66 * u
+  text(ctx, tr("today's quest"), FUT(false, 4.4 * u), 4.4 * u, SILVER, 0.5, x0, 150 * u, "left", 80 * u)
+  textR(ctx, `${n}/2`, FUT(false, 5.2 * u), 5.2 * u, n ? pal.name : SILVER, n ? 0.66 : 0.4, x1, 150 * u, 30 * u)
+  questBar(ctx, x0, x1, 157.5 * u, u, done, pal)
+}
+// one segment per quest (Train | Cook), each lit when that quest is done
+function questBar(ctx, x0, x1, y, u, done, pal) {
+  const g = 3 * u, h = 2.6 * u, w = (x1 - x0 - g) / 2
+  done.forEach((d, i) => {
+    const x = x0 + i * (w + g)
+    if (d) { glowRR(ctx, x, y - h / 2, w, h, h / 2, pal.glow, 0.6, 2.2 * u); fillPath(ctx, rrPath(x, y - h / 2, w, h, h / 2), pal.acc, 0.95); seg(ctx, x + h, y - h * 0.22, x + w - h, y - h * 0.22, "#FFFFFF", 0.28, 0.5 * u) }
+    else fillPath(ctx, rrPath(x, y - h / 2, w, h, h / 2), SILVER, 0.13)
   })
+}
+// the same round badge for Train and Cook: dark disc + ring (bright when done, dim when not) + the quest icon
+function questBadge(ctx, kind, x, y, r, d, pal, u) {
+  if (d) dot(ctx, x, y, r * 1.55, pal.glow, 0.12)
+  dot(ctx, x, y, r, "#0A0D14", 0.88)
+  strokeEll(ctx, x, y, r, d ? pal.acc : SILVER, d ? 0.95 : 0.26, (d ? 0.9 : 0.6) * u * Math.max(1, r / (6 * u)))
+  questIcon(ctx, kind, x, y - (kind === "cook" ? r * 0.12 : 0), r * 1.22, d, pal)
+}
+// cell label: [badge] TRAIN ✓   (not done: dim ring + a dim dot)
+function questLabel(ctx, kind, label, x, yc, u, d, pal) {      // [badge][label] centred on x by measured width; ✓ / dot trails outside the centring
+  const fz = 5.2 * u, r = 4.4 * u, gp = 2.2 * u, tw = (LABEL_EM[label] || label.length * 0.6) * fz
+  const left = x - (2 * r + gp + tw) / 2, tx = left + 2 * r + gp
+  questBadge(ctx, kind, left + r, yc, r, d, pal, u)
+  text(ctx, track(label), FUT(false, fz), fz, d ? pal.name : SILVER, d ? 0.85 : 0.5, tx + tw / 2, yc + 0.245 * fz, "center", tw + 10 * u)
+  if (d) tick(ctx, tx + tw + gp + 1.8 * u, yc, 3.6 * u, pal.acc, 1, 0.9 * u)
+  else dot(ctx, tx + tw + gp + 1 * u, yc, 0.9 * u, SILVER, 0.35)
 }
 
 // built-in galaxy: drawn once from a fixed seed (no flicker), cached as a PNG in Documents
@@ -2599,10 +2647,34 @@ function drawGalaxy(ctx, W, H) {
   for (const [vx, vy] of [[0, 0], [W, 0], [0, H], [W, H]])
     for (let i = 0; i < 6; i++) dot(ctx, vx, vy, (70 - i * 10) * u, "#000000", 0.07)
 }
+// v10: the real widget size in points. v9 always drew a 170pt (or 360x170) picture; on phones whose widgets are smaller or larger
+// (155 / 158 / 162 / 164 / 169 / 176pt …) iOS scales-to-fill and crops that picture, so the left-anchored bottom strip got cut.
+// Keys are the screen size in portrait points. FITNESS_CONFIG.widgetSize = [small, mediumW] overrides the table (for an unknown phone).
+const WIDGET_PT = {
+  "440x956": [170, 364], "430x932": [170, 364], "428x926": [170, 364], "414x896": [169, 360], "402x874": [162, 344],
+  "393x852": [158, 338], "390x844": [158, 338], "414x736": [159, 348], "375x812": [155, 329], "360x780": [155, 329],
+  "375x667": [148, 321], "320x568": [141, 292],
+}
+const WIDGET_PT_26 = { "440x956": [176.7, 377.3], "430x932": [170, 364], "402x874": [170, 364] }   // iOS 26 grew the Pro Max widgets
+function widgetSize(family) {
+  let sm = 170, md = 360
+  try {
+    const o = CFG.widgetSize
+    if (Array.isArray(o) && o[0] > 100) { sm = Number(o[0]); md = Number(o[1]) || Math.round(sm * 2.14) }
+    else {
+      const z = Device.screenSize(), k = `${Math.round(Math.min(z.width, z.height))}x${Math.round(Math.max(z.width, z.height))}`
+      const v26 = parseInt(String(Device.systemVersion ? Device.systemVersion() : "0"), 10) >= 26
+      const hit = (v26 && WIDGET_PT_26[k]) || WIDGET_PT[k]
+      if (hit) { sm = hit[0]; md = hit[1] }
+    }
+  } catch (e) {}
+  return family === "medium" ? [md, sm] : [sm, sm]
+}
 async function buildWidget(fam) {
   const { s, source } = await loadStats()
   const family = (fam || config.widgetFamily) === "small" || !(fam || config.widgetFamily) ? "small" : "medium"   // large falls back to the medium layout
-  const W = family === "medium" ? 360 : 170, H = 170, bg = null      // the galaxy is drawn live each refresh (it drifts with the clock)
+  const [W, H] = widgetSize(family), bg = null                       // v10: drawn at the phone's real widget size (see widgetSize)
+
   const CS = String(s.chaosState || "clear").toLowerCase().trim()
   const state = ["gold", "diamond", "prismatic"].includes(CS) ? CS : "clear"
   const lock = state === "clear" ? 0 : clamp(Math.round(Number(s.chaosCover) || CPAL[state].lock), 1, 5)
