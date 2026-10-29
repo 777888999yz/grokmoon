@@ -1,4 +1,4 @@
-// Mister 14 · Fitness Quest widget · v13.9 (quest tiles stacked + centred: label on top, a much bigger flame + streak below · questStack A/B/C) · v13.8 (galaxy flows across the whole medium widget behind the quest panel, galaxyFlow 1/2/3, stars dimmed behind text) · v13.7 (gold-lit done tiles, richer glow, flames 1.5x, header lifted so top = bottom clearance, new icon art A/B/C via questArt, 57 sombre verses removed → 1,252) · v13.6 (quest tiles: status words removed, centred [icon] Label [flame N] row, bigger; done tile lights up, not-done dim; questTiles 1 glow (default) | 2 underline | 3 tint) · v13.5 (borderless TODAY'S QUEST / RESTRICTED panel: frame and glass box removed, soft fading haze behind the text; panelFrame "soft" | "faint" | "glass") · v13.4 (galaxy balanced for 1,555: 16 superior star slots, GAL_GROW_K 280; verse fills the panel under the tiles, fit-to-box 13 → 7pt, up to 5 lines, reference 6pt) · v13.3 (1309 verses: sombre/half-negative ones removed) · v13.2 (verse text 9.5pt max, 6.2pt floor, up to 4 lines, reference 5.4; 1553 standalone verses incl. Joshua 1:9 / Isaiah 40:31 / Micah 6:8) · v13.1 (bigger verse text) · v13 (Bible verses (KJV) replace the quotes, a new one every hour; compact right panel A/B with the streaks folded in; ring-text options) · v12 (icy blue-white Milky Way band; medium: bigger centred XP ring, streak cells moved into the right panel, bigger quote; aligned stat cells: flame + number + label on one axis; real widget size + inset quest panel, clear star tiers; badges + medals build the Milky Way, 8 realistic astrophotography star designs per tier + realistic chaos looks, random-but-stable, twinkle + milestone flare: no medals = dark sky; Train | Cook bar, chaos blood theme)
+// Mister 14 · Fitness Quest widget · v13.16 (glow B default · quest panel = one balanced block: tiles + verse tied with a fixed gap, verse grows into the spare room, group centred so top clearance = bottom clearance · verse edges on the tile edges) · v13.15 (quest star off by default · galaxy done-glow questGlow A-E, default A nebula · questIcon default S solid glyphs) · v13.14 (quest panel: no "today's quest" header or x/2 counter, a star instead (1/2 sparkle, 2/2 radiant) · grid P = J + optical polish (default) · questFont F/R/V/U · questIcon A/B/R/S · grids L/M/N) · v13.13 (quest tiles J: a 2x2 grid · word over its icon, streak number over its flame · new default · K = number column on the tile's right edge) · v13.12 (F/G: both quest tiles share one geometry: same icon box, column x, word baseline and flame row; the pot + steam fit the dumbbell's box) · v13.11 (stacked tiles F: icon left spanning both lines, word over flame + number left-aligned to one x · new default · G = same, centred column) · v13.10 (stacked tiles D: label alone on top, [icon] [flame] [number] side by side below · new default) · v13.9 (quest tiles stacked + centred: label on top, a much bigger flame + streak below · questStack A/B/C) · v13.8 (galaxy flows across the whole medium widget behind the quest panel, galaxyFlow 1/2/3, stars dimmed behind text) · v13.7 (gold-lit done tiles, richer glow, flames 1.5x, header lifted so top = bottom clearance, new icon art A/B/C via questArt, 57 sombre verses removed → 1,252) · v13.6 (quest tiles: status words removed, centred [icon] Label [flame N] row, bigger; done tile lights up, not-done dim; questTiles 1 glow (default) | 2 underline | 3 tint) · v13.5 (borderless TODAY'S QUEST / RESTRICTED panel: frame and glass box removed, soft fading haze behind the text; panelFrame "soft" | "faint" | "glass") · v13.4 (galaxy balanced for 1,555: 16 superior star slots, GAL_GROW_K 280; verse fills the panel under the tiles, fit-to-box 13 → 7pt, up to 5 lines, reference 6pt) · v13.3 (1309 verses: sombre/half-negative ones removed) · v13.2 (verse text 9.5pt max, 6.2pt floor, up to 4 lines, reference 5.4; 1553 standalone verses incl. Joshua 1:9 / Isaiah 40:31 / Micah 6:8) · v13.1 (bigger verse text) · v13 (Bible verses (KJV) replace the quotes, a new one every hour; compact right panel A/B with the streaks folded in; ring-text options) · v12 (icy blue-white Milky Way band; medium: bigger centred XP ring, streak cells moved into the right panel, bigger quote; aligned stat cells: flame + number + label on one axis; real widget size + inset quest panel, clear star tiers; badges + medals build the Milky Way, 8 realistic astrophotography star designs per tier + realistic chaos looks, random-but-stable, twinkle + milestone flare: no medals = dark sky; Train | Cook bar, chaos blood theme)
 // Scriptable · small + medium · built-in galaxy background drawn live (no setup needed)
 //
 // SETUP: run this script once in the Scriptable app, then add a small Scriptable widget to your
@@ -635,15 +635,15 @@ const LABEL_EM = { TRAIN: 3.0, COOK: 3.0 }
 const FL_TOP = (t) => t <= 3 ? 0.78 : t <= 16 ? 1.2 : 1.55
 const FL_W = (t) => t <= 2 ? 0.32 : t === 3 ? 0.5 : t <= 9 ? 0.68 : t <= 11 ? 0.84 : 1.13
 function digitsAt(ctx, str, t, x0, yc, u) {                     // draw str left-to-right in tabular slots; x0 = left ink edge, yc = cap centre
-  const fz = NUM.fz * u, sl = NUM.slot * fz, y = yc + NUM.capOff * fz
-  const f = t >= 8 ? FUT(true, fz) : FUT(false, fz), hex = t >= 6 ? GOLD_BRIGHT : t >= 3 ? GOLD : GOLD_SOFT
+  const Q = typeof __QNF === "undefined" ? null : __QNF, fz = NUM.fz * u, sl = (Q ? Q.slot : NUM.slot) * fz, y = yc + (Q ? Q.off : NUM.capOff) * fz   // v13.14: questFont digits, still tabular
+  const f = Q ? Q.num(t >= 3, fz) : t >= 8 ? FUT(true, fz) : FUT(false, fz), hex = t >= 6 ? GOLD_BRIGHT : t >= 3 ? GOLD : GOLD_SOFT
   str.split("").forEach((ch, i) => {
-    const x = x0 + NUM.ink * fz / 2 + i * sl
+    const x = x0 + (Q ? Q.ink : NUM.ink) * fz / 2 + i * sl
     if (t >= 6) glowText(ctx, ch, f, fz, hex, x, y, "center", t >= 8 ? 1.6 : 1)
     else text(ctx, ch, f, fz, hex, 0.97, x, y, "center", 40 * u)
   })
 }
-const numInkW = (str, u) => ((str.length - 1) * NUM.slot + NUM.ink) * NUM.fz * u
+const numInkW = (str, u) => { const Q = typeof __QNF === "undefined" ? null : __QNF; return ((str.length - 1) * (Q ? Q.slot : NUM.slot) + (Q ? Q.ink : NUM.ink)) * NUM.fz * u }
 function statRow(ctx, s, cx, y, gap, u, plain) {
   const yc = y - 1.5 * u, capH = NUM.cap * NUM.fz * u, ly = yc + 11.5 * u   // number cap centre, label cap centre
   const items = [["train", s.exercise, "TRAIN"], ["cook", s.cooking, "COOK"]]
@@ -2155,24 +2155,53 @@ const QB_BOT_U = 9.4                                  // gap from the widget bot
 // label cap c · number cap = c x R · flame = number x F (the flame leads, the number sits on the flame's base line) · gaps + padding from c
 // "A" icon + label over flame + number, perfect-fourth scale R = 1.333² ≈ 1.78 (default) · "B" label only, golden R = 1.618 with the tallest flame
 // "C" icon left of a 2-line stack, golden R = 1.618 · "row" = the v13.8 single row
-const QSTACK = ["A", "B", "C"].includes(String(CFG.questStack || "A").toUpperCase()) ? String(CFG.questStack || "A").toUpperCase() : "ROW"
+// v13.10: "D" (default) label alone on line 1, line 2 = [icon] [flame] [number] on A's scale, icon ink ≈ 0.75 x the flame height · "E" same, icon ink ≈ the flame height
+// v13.14: "P" (default) = J's structure (word + icon left-aligned in the left column, number over flame centred in the right one, grid centred) with M's optical polish below
+// v13.14: "M" polished grid: each column centred (word over icon, number over flame), number cap 1.25 x the word's, dumbbell ink 0.9 x the flame,
+//   icon + flame on one OPTICAL centre line (flame mass sits low, so its line is 0.42 up from its base; the pot is centred on its body, steam ignored),
+//   the ink block centred top-to-bottom; "L" columns on the tile's thirds · "M" three equal gutters · "N" = M + a hairline between the columns
+// v13.13: "J" 2x2 grid: [word][number] on one baseline, [icon][flame] on one centre line; icon ink left-aligned under the word, flame centred under the number; grid centred in the tile · "K" same, number column on the tile's inner right edge
+// v13.11: "F" [icon] | word / flame + number, the column left-aligned (flame's left edge under the word's first letter), whole group centred · "G" same, column centred
+const QSTACK = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "P"].includes(String(CFG.questStack || "P").toUpperCase()) ? String(CFG.questStack || "P").toUpperCase() : "ROW"
 const QCAP = 0.7                                                       // Futura cap height / font size
 const QSK = (() => {
-  const V = { A: { lz: 8.4, R: 1.778, F: 1.5, icon: 1.75 }, B: { lz: 9.2, R: 1.618, F: 1.618, icon: 0 }, C: { lz: 8, R: 1.618, F: 1.5, icon: 0 } }[QSTACK]
+  const V = { A: { lz: 8.4, R: 1.778, F: 1.5, icon: 1.75 }, B: { lz: 9.2, R: 1.618, F: 1.618, icon: 0 }, C: { lz: 8, R: 1.618, F: 1.5, icon: 0 }, D: { lz: 8.4, R: 1.778, F: 1.5, icon: 0, i2: 1.1 }, E: { lz: 8.4, R: 1.778, F: 1.5, icon: 0, i2: 1.3 }, F: { lz: 8.4, R: 1.778, F: 1.5, icon: 0, side: 0.7, left: 1 }, G: { lz: 8.4, R: 1.778, F: 1.5, icon: 0, side: 0.7, left: 0 }, H: { lz: 8.4, R: 1.778, F: 1.5, icon: 0, mode: "H", i2: 1.1 }, I: { lz: 8.4, R: 1.778, F: 1.5, icon: 0, mode: "I", i2: 1.1 }, J: { lz: 8.4, R: 1.3, F: 2.05, icon: 0, grid: "J", ib: 1.37, gc: 1.6 }, K: { lz: 8.4, R: 1.3, F: 2.05, icon: 0, grid: "K", ib: 1.37, gc: 1.6 }, L: { lz: 8.4, R: 1.25, F: 2.133, icon: 0, g2: "L", ib: 1.45 }, M: { lz: 8.4, R: 1.25, F: 2.133, icon: 0, g2: "M", ib: 1.45 }, N: { lz: 8.4, R: 1.25, F: 2.133, icon: 0, g2: "N", ib: 1.45 }, P: { lz: 8.4, R: 1.25, F: 2.133, icon: 0, g2: "P", ib: 1.45, gc: 1.6 } }[QSTACK]
   if (!V) return { k: QFLAME_K, th: 30 }
   const c = QCAP * V.lz, nc = c * V.R, fv = nc * V.F, gap = 0.6 * c, pad = 1.05 * c, fg = 0.3 * nc   // all in u
   const stack = c + gap + fv
   return { ...V, c, nc, fv, gap, pad, fg, stack, k: nc / (NUM.cap * NUM.fz), th: Math.round((stack + 2 * pad) * 2) / 2 }
 })()
+// v13.14 questFont (2x2 grids): F = Futura (as v13.13) · R = SF Rounded (default) · V = Avenir Next · U = SF semibold, tracked UPPERCASE · digits stay tabular (fixed slots)
+const QFONT = ["F", "R", "V", "U"].includes(String(CFG.questFont || "R").toUpperCase()) ? String(CFG.questFont || "R").toUpperCase() : "R"
+const QFONTS = {
+  F: null,
+  R: { lab: (b, z) => b ? Font.boldRoundedSystemFont(z) : Font.semiboldRoundedSystemFont(z), num: (b, z) => b ? Font.heavyRoundedSystemFont(z) : Font.boldRoundedSystemFont(z), wf: 0.93, off: 0.02, slot: 0.6, ink: 0.5, up: 0, zk: 1 },
+  V: { lab: (b, z) => new Font(b ? "AvenirNext-DemiBold" : "AvenirNext-Medium", z), num: (b, z) => new Font(b ? "AvenirNext-Heavy" : "AvenirNext-Bold", z), wf: 0.9, off: -0.026, slot: 0.6, ink: 0.5, up: 0, zk: 1 },
+  U: { lab: (b, z) => b ? Font.semiboldSystemFont(z) : Font.mediumSystemFont(z), num: (b, z) => b ? Font.heavySystemFont(z) : Font.boldSystemFont(z), wf: 1.0, off: 0.02, slot: 0.62, ink: 0.52, up: 1, zk: 0.78 },
+}
+// v13.14 questIcon (2x2 grids): A = v13.13 dumbbell + pot · B = kettlebell + chef hat · R = refined line icons, one stroke weight, round caps (default) · S = solid glyphs with an inner highlight
+const QICON = ["A", "B", "R", "S"].includes(String(CFG.questIcon || "S").toUpperCase()) ? String(CFG.questIcon || "S").toUpperCase() : "S"   // v13.15: solid glyphs by default
+let __QNF = null, __QART2 = null
+const QICON2 = () => __QART2 || QART
+const labW = (label, lz, bold) => { const Q = __QNF; if (!Q) return futW(label, lz, bold); const z = lz * Q.zk; return futW(Q.up ? track(label.toUpperCase()) : label, z, bold) * Q.wf }
+const FLINK = [0.23, 0.43, 0.45, 0.45, 0.46, 0.56, 0.46, 0.56, 0.56, 0.56, 0.56, 0.56, 0.58, 0.58, 0.58, 0.58, 0.58, 0.61, 0.61]   // v13.11: measured half ink width of the lit flame per tier (x flame box height) + a hair of margin
+const FLINKTOP = [0.83, 1.2, 1.2, 1.23, 1.2, 1.2, 1.2, 1.2, 1.2, 1.2, 1.2, 1.2, 1.2, 1.2, 1.2, 1.2, 1.25, 1.52, 1.55]   // v13.11: measured top of the lit flame (x box height), so F/G flames stay under the word
 function questStacked(ctx, x, y, w, h, u, kind, label, p, d, pal) {
   const S = QSK, cx = x + w / 2, cy = y + h / 2, bold = d
   const lab = (lz, lx, cc) => {                                         // label with its cap centre on cc
+    const Q = __QNF
+    if (Q) {                                                            // v13.14 questFont: same baseline as the nominal Futura label (cc + cap/2)
+      const z = lz * Q.zk, str = Q.up ? track(label.toUpperCase()) : label, yb = cc + QCAP * lz / 2 - QCAP * z / 2 + Q.off * z, lw = labW(label, lz, bold) + 6 * u
+      if (d) text(ctx, str, Q.lab(bold, z), z, pal.glow, 0.28, lx, yb + 0.25 * u, "left", lw)
+      text(ctx, str, Q.lab(bold, z), z, d ? pal.name : SILVER, d ? 1 : 0.5, lx, yb, "left", lw)
+      return
+    }
     const lw = futW(label, lz, bold) + 6 * u
     if (d) text(ctx, label, FUT(bold, lz), lz, pal.glow, 0.28, lx, cc + 0.245 * lz + 0.25 * u, "left", lw)
     text(ctx, label, FUT(bold, lz), lz, d ? pal.name : SILVER, d ? 1 : 0.5, lx, cc + 0.245 * lz, "left", lw)
   }
   // flame + number as one group: shared base line, flame S.F x the number's cap, gap 0.3 x cap
-  const T = p ? flameTier(p.v) : 0, fvis = S.fv * u, fh = fvis / FL_TOP(T), ffw = FL_W(T) * fh, ncap = S.nc * u, fg = S.fg * u
+  const T = p ? flameTier(p.v) : 0, fvis = S.fv * u, fh = fvis / ((S.side || S.mode || S.grid || S.g2) && p && p.v > 0 ? FLINKTOP[Math.min(18, T)] : FL_TOP(T)), ffw = (S.side || S.mode || S.grid || S.g2 ? 2 * FLINK[Math.min(18, T)] : FL_W(T)) * fh, ncap = S.nc * u, fg = S.fg * u   // v13.11 F/G: measured flame ink width, so its left edge lines up and it never touches the number
   const nw = p ? numInkW(p.str, u * S.k) : 0, gw = p ? ffw + fg + nw : 0
   const group = (gx, base) => {                                          // gx = left ink edge, base = shared base line
     const fcx = gx + ffw / 2, gyc = base - fvis / 2
@@ -2184,6 +2213,81 @@ function questStacked(ctx, x, y, w, h, u, kind, label, p, d, pal) {
   }
   let lz = S.lz * u
   const top = cy - S.stack * u / 2, c1 = top + S.c * u / 2, base = top + S.stack * u
+  const tilesQ = __QSL || [{ label, p, bold }]
+  const gwQ = (q) => { if (!q) return 0; const t = Math.min(18, flameTier(q.v)), hh = fvis / (q.v > 0 ? FLINKTOP[t] : FL_TOP(t)); return 2 * FLINK[t] * hh + fg + numInkW(q.str, u * S.k) }
+  const icon = (icx, icy, sz) => {                                     // v13.12: one icon box for both kinds; the pot + shorter steam fit the dumbbell's box
+    if (d) for (let k = 0; k < 6; k++) dot(ctx, icx, icy, sz * (1.0 - k * 0.12), pal.glow, 0.045)
+    if (kind === "cook" && QICON2() === "A") { __POT_FIT = S.g2 ? 2 : 1; try { questArt(ctx, kind, icx, icy + 0.015 * sz, sz * 0.9, d, pal, u) } finally { __POT_FIT = 0 } }
+    else questArt(ctx, kind, icx, icy, sz, d, pal, u)
+  }
+  if (S.g2) {                                                           // v13.14 L/M/N: the polished grid, geometry from BOTH tiles
+    const c = S.c * u, nk = u * S.k, ncap2 = S.nc * u, ib = S.ib * fvis, iInk = 0.84 * ib, g = S.gap * u
+    const flWq = (q) => { if (!q) return 0; const t = Math.min(18, flameTier(q.v)), hh = fvis / (q.v > 0 ? FLINKTOP[t] : FL_TOP(t)); return 2 * FLINK[t] * hh }
+    const Wl = Math.max(iInk, ...tilesQ.map((q) => labW(q.label, lz, q.bold)))
+    const Wr = Math.max(...tilesQ.map((q) => q.p ? Math.max(numInkW(q.p.str, nk), flWq(q.p)) : 0))
+    let lc, rc
+    if (S.g2 === "P") { const L0 = cx - (Wl + S.gc * c + Wr) / 2; lc = L0 + Wl / 2; rc = L0 + Wl + S.gc * c + Wr / 2 }
+    else if (S.g2 === "L") { lc = x + w / 3; rc = x + 2 * w / 3 }
+    else { const gut = (w - Wl - Wr) / 3; lc = x + gut + Wl / 2; rc = x + w - gut - Wr / 2 }
+    const wx = S.g2 === "P" ? lc - Wl / 2 : lc - labW(label, lz, bold) / 2      // P: word + icon ink left-aligned to the column
+    if (!p) { lab(lz, wx, cy); return }
+    const OPT = 0.42, up = (1 - OPT) * fvis, dn = Math.max(OPT * fvis, 0.31 * ib)   // optical extents of row 2 around its centre line
+    const Hb = ncap2 + g + up + dn, bl = cy - Hb / 2 + ncap2, mid = bl + g + up, fb = mid + OPT * fvis
+    lab(lz, wx, bl - c / 2)
+    const icx = S.g2 === "P" ? wx + iInk / 2 : lc
+    icon(icx, kind === "cook" && QICON2() === "A" ? mid - 0.089 * ib : mid, ib)   // pot A: its body (not the steam) on the line; R/S/B are drawn body-centred
+    if (globalThis.__QG2) globalThis.__QG2.push({ kind, tx: x, wx, icx, rc, bl, mid, fb })
+    const nw = numInkW(p.str, nk)
+    if (d) for (let k = 0; k < 5; k++) dot(ctx, rc, mid, fh * (0.8 - k * 0.13), pal.glow, 0.05)
+    __EMBER_TOP = fb - fvis - 0.4 * g
+    try { fire(ctx, rc, fb, fh, p.kind, T, (p.v * 7 + (p.kind === "train" ? 1 : 2)) + fireSeed(), p.v > 0) } finally { __EMBER_TOP = null }
+    digitsAt(ctx, p.str, T >= 18 ? 8 : T >= 10 ? 6 : T >= 4 ? 3 : 0, rc - nw / 2, bl - ncap2 / 2, nk)
+    if (!d) { const mr = Math.max(Wr, fvis + ncap2) * 0.62, my = (bl - ncap2 + fb) / 2; for (let k = 0; k < 5; k++) dot(ctx, rc, my, mr * (1 - k * 0.12), "#05070C", 0.12) }
+    if (S.g2 === "N") { const hx = (lc + Wl / 2 + rc - Wr / 2) / 2; seg(ctx, hx, bl - ncap2 + 0.5 * u, hx, mid + dn - 0.5 * u, d ? pal.glow : "#FFFFFF", d ? 0.22 : 0.08, 0.5 * u) }
+    return
+  }
+  if (S.grid) {                                                         // v13.13 J/K: 2x2 grid, geometry from BOTH tiles
+    const c = S.c * u, nk = u * S.k, ncapJ = S.nc * u, ib = S.ib * fvis, iInk = 0.84 * ib, gc = S.gc * c
+    const flWq = (q) => { if (!q) return 0; const t = Math.min(18, flameTier(q.v)), hh = fvis / (q.v > 0 ? FLINKTOP[t] : FL_TOP(t)); return 2 * FLINK[t] * hh }
+    const Wl = Math.max(iInk, ...tilesQ.map((q) => labW(q.label, lz, q.bold)))
+    const Wr = Math.max(...tilesQ.map((q) => q.p ? Math.max(numInkW(q.p.str, nk), flWq(q.p)) : 0))
+    const L = S.grid === "K" ? x + S.pad * u : cx - (Wl + gc + Wr) / 2
+    const rc = S.grid === "K" ? x + w - S.pad * u - Wr / 2 : L + Wl + gc + Wr / 2   // right column centre
+    const cc = p ? c1 : cy, bl = cc + c / 2, mid = base - fvis / 2
+    lab(lz, L, cc)
+    if (!p) return
+    icon(L + ib / 2 - (ib - iInk) / 2, mid, ib)
+    const nw = numInkW(p.str, nk), fx = rc
+    if (d) for (let k = 0; k < 5; k++) dot(ctx, fx, mid, fh * (0.8 - k * 0.13), pal.glow, 0.05)
+    __EMBER_TOP = base - fvis - 0.4 * S.gap * u
+    try { fire(ctx, fx, base, fh, p.kind, T, (p.v * 7 + (p.kind === "train" ? 1 : 2)) + fireSeed(), p.v > 0) } finally { __EMBER_TOP = null }
+    digitsAt(ctx, p.str, T >= 18 ? 8 : T >= 10 ? 6 : T >= 4 ? 3 : 0, rc - nw / 2, bl - ncapJ / 2, nk)
+    if (!d) { const mr = Math.max(Wr, fvis + ncapJ) * 0.62, my = (bl - ncapJ + base) / 2; for (let k = 0; k < 5; k++) dot(ctx, rc, my, mr * (1 - k * 0.12), "#05070C", 0.12) }   // not done: sits back
+    return
+  }
+  if (S.mode) {                                                         // v13.12 H: word centred / [icon][flame][number] centred · I: both left on the tile's inner padding
+    const i2 = S.i2 * fvis, gi = 0.5 * ncap, gwm = Math.max(...tilesQ.map((q) => gwQ(q.p))), rw = i2 + gi + gwm
+    const lx = S.mode === "H" ? cx - futW(label, lz, bold) / 2 : x + S.pad * u
+    lab(lz, lx, p ? c1 : cy)
+    if (!p) return
+    const rx = S.mode === "H" ? cx - rw / 2 : x + S.pad * u
+    icon(rx + i2 / 2, base - fvis / 2, i2)
+    group(rx + i2 + gi, base)
+    return
+  }
+  if (S.side) {                                                         // v13.11 F/G: [icon] | word / flame + number
+    let iw = S.side * S.stack * u                                       // v13.12: sized from BOTH tiles (__QSL) so Train and Cook get identical geometry
+    const tiles = tilesQ, gwOf = gwQ
+    const g = 0.9 * S.c * u, room = w - 2 * S.pad * u, cwOf = () => Math.max(...tiles.map((q) => Math.max(futW(q.label, lz, q.bold), gwOf(q.p))))
+    while (iw + g + cwOf() > room && iw > 0.6 * S.stack * u) iw -= 0.2 * u
+    while (lz > 6.6 * u && iw + g + cwOf() > room) lz -= 0.2 * u
+    const cw = cwOf(), x0 = cx - (iw + g + cw) / 2, colX = x0 + iw + g, ic = p ? top + S.stack * u / 2 : cy
+    icon(x0 + iw / 2, ic, iw)
+    const lw = futW(label, lz, bold)
+    lab(lz, S.left ? colX : colX + (cw - lw) / 2, p ? c1 : cy)
+    if (p) group(S.left ? colX : colX + (cw - gw) / 2, base)
+    return
+  }
   if (QSTACK === "C") {                                                 // [icon] | label / flame + number
     const iw = S.stack * u * 0.92, g = 1.2 * S.c * u
     while (lz > 6.6 * u && iw + g + Math.max(futW(label, lz, bold), gw) > w - 2 * S.pad * u) lz -= 0.2 * u
@@ -2203,14 +2307,24 @@ function questStacked(ctx, x, y, w, h, u, kind, label, p, d, pal) {
     questArt(ctx, kind, lx + iw / 2, l1, iw, d, pal, u); lx += iw + g1
   }
   lab(lz, lx, l1)
-  if (p) group(cx - gw / 2, base)
+  if (p && S.i2) {                                                      // v13.10 D/E: [icon] gap [flame] gap [number], one centred row, icon centred on the flame
+    const i2 = S.i2 * fvis, gi = 0.5 * ncap, rw = i2 + gi + gw, rx = cx - rw / 2, ic = base - fvis / 2   // icon-to-flame gap 0.5 x the number's cap
+    if (d) for (let k = 0; k < 6; k++) dot(ctx, rx + i2 / 2, ic, i2 * (0.95 - k * 0.11), pal.glow, 0.04)
+    questArt(ctx, kind, rx + i2 / 2, ic, i2, d, pal, u)
+    group(rx + i2 + gi, base)
+  } else if (p) group(cx - gw / 2, base)
 }
 function questTile(ctx, x, y, w, h, u, kind, label, p, d, pal) {
   const cy = y + h / 2, rr = 8 * u, S = QTILE
-  if (S === 1) tileGlow(ctx, x, y, w, h, rr, u, d, pal)
+  if (d && S === 1 && QGLOW !== "G") { galGlow(ctx, x, y, w, h, rr, u, kind, QGLOW, __QN >= 2); pal = Object.assign({}, pal, { glow: GLOWC[QGLOW] }) }   // v13.15 galaxy done-glow; inner blooms take its colour
+  else if (S === 1) tileGlow(ctx, x, y, w, h, rr, u, d, pal)
   else if (S === 2) { fillPath(ctx, rrPath(x, y, w, h, rr), "#FFFFFF", d ? 0.06 : 0.025); strokeP(ctx, rrPath(x, y, w, h, rr), "#FFFFFF", d ? 0.16 : 0.06, 0.5 * u) }
   else fillPath(ctx, rrPath(x, y, w, h, rr), d ? pal.glow : "#FFFFFF", d ? 0.17 : 0.02)
-  if (QSTACK !== "ROW") return questStacked(ctx, x, y, w, h, u, kind, label, p, d, pal)   // v13.9
+  if (QSTACK !== "ROW") {                                              // v13.9 · v13.14: questFont / questIcon apply to the 2x2 grids (J/K/L/M/N/P)
+    const G = QSK.grid || QSK.g2
+    __QNF = G ? QFONTS[QFONT] : null; __QART2 = G ? QICON : null
+    try { return questStacked(ctx, x, y, w, h, u, kind, label, p, d, pal) } finally { __QNF = null; __QART2 = null }
+  }
   // centred row: [icon] gap [label] gap [flame + number]
   const iw = 15 * u, g1 = 3 * u, g2 = 3.6 * u, bold = d
   const fw = p ? p.fw + p.gp + p.nw : 0, room = w - 7 * u
@@ -2232,6 +2346,71 @@ function questTile(ctx, x, y, w, h, u, kind, label, p, d, pal) {
     if (!d) { const mx = xx + fw / 2, mr = Math.max(fw, p.h) * 0.62; for (let k = 0; k < 5; k++) dot(ctx, mx, cy, mr * (1 - k * 0.12), "#05070C", 0.12) }   // not done: flame + number sit back (soft dim veil, no edge)
   }
 }
+// v13.15 galaxy "done" glow (FITNESS_CONFIG.questGlow; 2/2 a little stronger than 1/2; not-done tiles stay the dim glass):
+//   A nebula haze: deep-space fill, sapphire + violet nebula clouds, tiny twinkle specks inside, icy rim
+//   B icy starlight rim: crisp ice-white rim, top starlight highlight, soft sapphire outer bloom (default)
+//   C aurora: gold at the floor rising into ice-blue at the top, with an ice rim
+//   D stardust: faint sapphire glass, stardust specks drifting around the icon and flame
+//   E milky way streak: an icy-blue Milky Way band crossing behind the tile with star specks
+//   G legacy gold glow (v13.14)
+const QGLOW = ["A", "B", "C", "D", "E", "G"].includes(String(CFG.questGlow || "B").toUpperCase()) ? String(CFG.questGlow || "B").toUpperCase() : "B"   // v13.16: B icy starlight rim by default
+const GLOWC = { A: "#4F7DFF", B: "#7FB2FF", C: "#9CC8FF", D: "#6F9BFF", E: "#8DB8FF", G: "#E9B84A" }
+let __QN = 0
+function rrRows(ctx, x, y, w, h, rr, step, fn) {        // fill a rounded rect row by row; fn(t 0 top..1 bottom, rowY) -> [hex, a] (a gradient without gradients)
+  for (let yy = y; yy < y + h - 0.01; yy += step) {
+    const ym = Math.min(yy + step / 2, y + h), dy = ym < y + rr ? y + rr - ym : ym > y + h - rr ? ym - (y + h - rr) : 0
+    const ins = dy > 0 ? rr - Math.sqrt(Math.max(0, rr * rr - dy * dy)) : 0, c = fn((ym - y) / h, ym)
+    if (c && c[1] > 0) { ctx.setFillColor(col(c[0], c[1])); ctx.fillRect(new Rect(x + ins, yy, w - 2 * ins, Math.min(step, y + h - yy))) }
+  }
+}
+function galGlow(ctx, x, y, w, h, rr, u, kind, G, big) {
+  const k = big ? 1.25 : 1, R = rrPath(x, y, w, h, rr), cx = x + w / 2, cy = y + h / 2
+  let sd = kind === "cook" ? 7 : 3; const rnd = () => { sd = (sd * 9301 + 49297) % 233280; return sd / 233280 }   // fixed specks per tile
+  const specks = (n, x0, y0, ww, hh, hexs, amax, rmax) => { for (let i = 0; i < n; i++) { const px = x0 + rnd() * ww, py = y0 + rnd() * hh, r = (0.18 + rnd() * rmax) * u; dot(ctx, px, py, r, hexs[i % hexs.length], (0.25 + rnd() * 0.75) * amax) } }
+  const bloom = (hex, a, sp) => { for (let i = 6; i >= 1; i--) strokeP(ctx, R, hex, (a + 0.008 * (6 - i)) * k, i * sp * u) }
+  const ice = "#E8F2FF"
+  if (G === "A") {
+    bloom("#2F5FE0", 0.018, 1.1)
+    fillPath(ctx, R, "#060A1C", 0.55); fillPath(ctx, R, "#1E3FA8", 0.16 * k)
+    for (const [fx, fy, fr, hx, a] of [[0.22, 0.62, 0.42, "#2F6BFF", 0.05], [0.7, 0.35, 0.38, "#7A5CFF", 0.045], [0.5, 0.8, 0.3, "#4FA3FF", 0.04], [0.85, 0.75, 0.25, "#5B4CFF", 0.035]])
+      for (let i = 0; i < 6; i++) dot(ctx, x + fx * w, y + fy * h, Math.min(fr * h, h * 0.45) * (1 - i / 7), hx, a * k)
+    specks(big ? 22 : 16, x + 3 * u, y + 2.5 * u, w - 6 * u, h - 5 * u, [ice, "#BFD6FF", "#D9CCFF"], 0.75, 0.32)
+    for (const [fx, fy] of [[0.12, 0.22], [0.9, 0.55]]) { const px = x + fx * w, py = y + fy * h, r = (big ? 1.5 : 1.2) * u; seg(ctx, px - r, py, px + r, py, ice, 0.55, 0.25 * u); seg(ctx, px, py - r, px, py + r, ice, 0.55, 0.25 * u); dot(ctx, px, py, 0.3 * u, "#FFFFFF", 0.9) }
+    strokeP(ctx, R, "#BFD6FF", 0.38 * k, 0.5 * u)
+  } else if (G === "B") {
+    bloom("#3D7BFF", 0.024, 1.25)
+    fillPath(ctx, R, "#0A1430", 0.4); fillPath(ctx, R, "#2F6BFF", 0.08 * k)
+    rrRows(ctx, x + 0.6 * u, y + 0.6 * u, w - 1.2 * u, h - 1.2 * u, rr - 0.6 * u, 0.5 * u, (t) => ["#CFE2FF", 0.09 * k * Math.max(0, 1 - t * 1.8)])
+    strokeP(ctx, R, ice, 0.6 * k, 0.55 * u)
+    const n = 18; for (let i = 0; i < n; i++) { const f = 1 - Math.abs((i + 0.5) / n * 2 - 1); seg(ctx, x + rr + (w - 2 * rr) * i / n, y + 0.35 * u, x + rr + (w - 2 * rr) * (i + 1) / n, y + 0.35 * u, "#FFFFFF", 0.1 + 0.7 * f, 0.6 * u) }
+    const sx = x + w - rr * 0.7, sy = y + rr * 0.3, r = (big ? 2.6 : 2) * u
+    seg(ctx, sx - r, sy, sx + r, sy, "#FFFFFF", 0.7, 0.28 * u); seg(ctx, sx, sy - r * 0.8, sx, sy + r * 0.8, "#FFFFFF", 0.6, 0.28 * u); dot(ctx, sx, sy, 0.45 * u, "#FFFFFF", 1)
+  } else if (G === "C") {
+    bloom("#8FB4FF", 0.016, 1.1)
+    fillPath(ctx, R, "#070B18", 0.45)
+    rrRows(ctx, x, y, w, h, rr, 0.5 * u, (t) => t > 0.55 ? ["#E9B84A", (0.05 + 0.24 * (t - 0.55) / 0.45) * k] : ["#7FB2FF", (0.05 + 0.2 * (0.55 - t) / 0.55) * k])
+    for (let i = 0; i < 14; i++) { const t = (i + 0.5) / 14, px = x + rr * 0.6 + t * (w - rr * 1.2), py = y + h * (0.42 + 0.08 * Math.sin(t * Math.PI * 2.2)); for (let j = 0; j < 3; j++) dot(ctx, px, py, h * 0.12 * (1 - j / 3), i % 3 === 1 ? "#9FFFE0" : "#BFD6FF", 0.022 * k) }   // soft aurora curtain
+    specks(big ? 10 : 7, x + 4 * u, y + 2 * u, w - 8 * u, h * 0.45, [ice], 0.6, 0.25)
+    strokeP(ctx, R, "#DCEBFF", 0.42 * k, 0.5 * u)
+  } else if (G === "D") {
+    bloom("#3D6BFF", 0.016, 1.1)
+    fillPath(ctx, R, "#081028", 0.45); fillPath(ctx, R, "#2F6BFF", 0.07 * k)
+    const L = __QSL && __QSL[0] ? 1 : 1, ix = x + w * 0.3, fx = x + w * 0.72, iy = y + h * 0.66
+    for (const [ox, rad] of [[ix, h * 0.3], [fx, h * 0.26]]) for (let i = 0; i < (big ? 16 : 12); i++) {
+      const a = rnd() * Math.PI * 2, rr2 = rad * (0.75 + rnd() * 0.55), px = ox + Math.cos(a) * rr2 * 1.25, py = iy + Math.sin(a) * rr2 * 0.8
+      if (px > x + 2 * u && px < x + w - 2 * u && py > y + 2 * u && py < y + h - 2 * u) dot(ctx, px, py, (0.2 + rnd() * 0.35) * u, i % 4 ? ice : "#F2D58F", (0.35 + rnd() * 0.6) * k)
+    }
+    specks(8, x + 3 * u, y + 2 * u, w - 6 * u, h - 4 * u, ["#BFD6FF"], 0.45, 0.2)
+    strokeP(ctx, R, "#BFD6FF", 0.34 * k, 0.5 * u)
+  } else {                                              // E milky way streak behind the tile
+    fillPath(ctx, R, "#050914", 0.45); fillPath(ctx, R, "#2F6BFF", 0.05 * k)
+    const band = (t) => [x - 5 * u + t * (w + 10 * u), y + h * (0.92 - t * 0.84)]   // soft dust band (round puffs, no hard edge)
+    for (let i = 0; i <= 28; i++) { const t = i / 28, [px, py] = band(t), f = Math.sin(Math.PI * t); for (let j = 0; j < 3; j++) dot(ctx, px, py, (2.2 + 3.2 * f) * u * (1 - j / 3.2), j === 2 ? "#E8F2FF" : "#7FA8FF", (j === 2 ? 0.08 : 0.045) * k) }; for (let i = 0; i < 12; i++) { const [px, py] = band(0.1 + rnd() * 0.8); dot(ctx, px + (rnd() - 0.5) * 6 * u, py + (rnd() - 0.5) * 4 * u, (0.25 + rnd() * 0.3) * u, "#FFFFFF", 0.5 + rnd() * 0.5) }
+    for (let i = 0; i < 9; i++) { const t = 0.08 + i / 9, px = x + t * w, py = y + h * (0.9 - t * 0.9) + (rnd() - 0.5) * 5 * u; dot(ctx, px, py, (0.6 + rnd() * 1.4) * u, "#9FC4FF", 0.05 * k) }
+    specks(big ? 16 : 11, x + 2 * u, y + 2 * u, w - 4 * u, h - 4 * u, [ice, "#CFE0FF"], 0.6, 0.28)
+    strokeP(ctx, R, "#CFE0FF", 0.36 * k, 0.5 * u)
+  }
+}
 // v13.7 lit tile: soft outer bloom, warm fill with an inner light falling from the top, gentle gold rim + a top highlight that fades at the ends (no harsh outline)
 function tileGlow(ctx, x, y, w, h, rr, u, d, pal) {
   if (!d) { fillPath(ctx, rrPath(x, y, w, h, rr), "#FFFFFF", 0.03); strokeP(ctx, rrPath(x, y, w, h, rr), "#FFFFFF", 0.075, 0.5 * u); return }
@@ -2250,16 +2429,57 @@ const GAL_FLOW = [0, 1, 2, 3].includes(Number(CFG.galaxyFlow)) ? Number(CFG.gala
 const QART = ["A", "B", "C"].includes(String(CFG.questArt || "").toUpperCase()) ? String(CFG.questArt).toUpperCase() : "A"
 function qPath(pts) { const p = new Path(); p.move(P_(pts[0][0], pts[0][1])); for (let i = 1; i < pts.length; i++) p.addLine(P_(pts[i][0], pts[i][1])); p.closeSubpath(); return p }
 function ellPath(cx, cy, rx, ry) { const p = new Path(), k = 0.5523; p.move(P_(cx + rx, cy)); p.addCurve(P_(cx, cy + ry), P_(cx + rx, cy + ry * k), P_(cx + rx * k, cy + ry)); p.addCurve(P_(cx - rx, cy), P_(cx - rx * k, cy + ry), P_(cx - rx, cy + ry * k)); p.addCurve(P_(cx, cy - ry), P_(cx - rx, cy - ry * k), P_(cx - rx * k, cy - ry)); p.addCurve(P_(cx + rx, cy), P_(cx + rx * k, cy - ry), P_(cx + rx, cy - ry * k)); p.closeSubpath(); return p }
+let __POT_FIT = 0, __QSL = null   // v13.12: F/G pot fit flag · both quest tiles' labels + streak parts while panelQuestB draws them
 function steam(ctx, x, y0, y1, s, hex, a, lw) {   // one gentle S-curve wisp rising from y0 to y1
   const p = new Path(), m = (y0 + y1) / 2, k = s * 0.06
   p.move(P_(x, y0)); p.addCurve(P_(x, m), P_(x - k, y0 - (y0 - m) * 0.4), P_(x - k, m + (y0 - m) * 0.2)); p.addCurve(P_(x, y1), P_(x + k, m - (m - y1) * 0.2), P_(x + k, y1 + (m - y1) * 0.4))
   strokeP(ctx, p, hex, a, lw)
 }
 function questArt(ctx, kind, cx, cy, s, d, pal, u) {
-  const A = QART, lit = d, body = lit ? pal.acc : SILVER, hi = lit ? "#FFF6DC" : SILVER, sh = lit ? pal.glow : SILVER
+  const A = __QART2 || QART, lit = d, body = lit ? pal.acc : SILVER, hi = lit ? "#FFF6DC" : SILVER, sh = lit ? pal.glow : SILVER
   const F = (p, a) => fillPath(ctx, p, body, lit ? a : 0.10), O = (p) => { if (!lit) strokeP(ctx, p, SILVER, 0.55, 0.5 * u) }, H = (p, a) => { if (lit) fillPath(ctx, p, hi, a) }
   const L = (p, w) => strokeP(ctx, p, lit ? pal.acc : SILVER, lit ? 1 : 0.55, w)
   const X = (fx) => cx + fx * s, Y = (fy) => cy + fy * s
+  if (A === "R") {                                   // v13.14 refined line icons: one stroke weight, round caps, a light inner fill when done
+    const w = 0.07 * s, sc = lit ? pal.acc : SILVER, sa = lit ? 1 : 0.6, fl = (p) => { if (lit) fillPath(ctx, p, pal.acc, 0.22) }, st = (p) => strokeP(ctx, p, sc, sa, w)
+    if (kind === "train") {
+      seg(ctx, X(-0.17), cy, X(0.17), cy, sc, sa, w)
+      for (const sg of [-1, 1]) {
+        const p1 = rrPath(sg > 0 ? X(0.17) : X(-0.27), Y(-0.27), 0.1 * s, 0.54 * s, 0.045 * s), p2 = rrPath(sg > 0 ? X(0.31) : X(-0.385), Y(-0.17), 0.075 * s, 0.34 * s, 0.035 * s)
+        fl(p1); fl(p2); st(p1); st(p2)
+      }
+      if (lit) for (const sg of [-1, 1]) seg(ctx, X(0.205 * sg), Y(-0.19), X(0.205 * sg), Y(-0.06), "#FFF6DC", 0.55, 0.025 * s)
+    } else {
+      const body = new Path(); body.move(P_(X(-0.3), Y(-0.02))); body.addLine(P_(X(-0.28), Y(0.19))); body.addQuadCurve(P_(X(-0.17), Y(0.28)), P_(X(-0.27), Y(0.28))); body.addLine(P_(X(0.17), Y(0.28))); body.addQuadCurve(P_(X(0.28), Y(0.19)), P_(X(0.27), Y(0.28))); body.addLine(P_(X(0.3), Y(-0.02))); body.closeSubpath()
+      fl(body); st(body)
+      const lid = new Path(); lid.move(P_(X(-0.36), Y(-0.08))); lid.addQuadCurve(P_(X(0.36), Y(-0.08)), P_(cx, Y(-0.27))); st(lid)
+      seg(ctx, X(-0.36), Y(-0.08), X(0.36), Y(-0.08), sc, sa, w)
+      st(ellPath(cx, Y(-0.215), 0.035 * s, 0.03 * s))
+      for (const sg of [-1, 1]) seg(ctx, X(0.31 * sg), Y(0.05), X(0.4 * sg), Y(0.05), sc, sa, w)
+      for (const sx of [-0.1, 0.1]) steam(ctx, X(sx), Y(-0.28), Y(-0.43), s * 0.8, lit ? "#FFF6DC" : SILVER, lit ? 0.75 : 0.4, w * 0.75)
+      if (lit) seg(ctx, X(-0.2), Y(0.04), X(-0.2), Y(0.18), "#FFF6DC", 0.5, 0.025 * s)
+    }
+    return
+  }
+  if (A === "S") {                                   // v13.14 solid glyphs: one silhouette, a soft inner highlight when done, a flat dim fill when not
+    const fc = lit ? pal.acc : SILVER, fa = lit ? 1 : 0.34, SF = (p) => fillPath(ctx, p, fc, fa), HL = (p, a) => { if (lit) fillPath(ctx, p, "#FFF6DC", a) }
+    if (kind === "train") {
+      SF(rrPath(X(-0.18), Y(-0.045), 0.36 * s, 0.09 * s, 0.045 * s))
+      for (const sg of [-1, 1]) {
+        SF(rrPath(sg > 0 ? X(0.16) : X(-0.28), Y(-0.28), 0.12 * s, 0.56 * s, 0.05 * s)); SF(rrPath(sg > 0 ? X(0.3) : X(-0.4), Y(-0.19), 0.1 * s, 0.38 * s, 0.04 * s)); SF(rrPath(sg > 0 ? X(0.39) : X(-0.43), Y(-0.06), 0.04 * s, 0.12 * s, 0.02 * s))
+        HL(rrPath(sg > 0 ? X(0.175) : X(-0.265), Y(-0.25), 0.035 * s, 0.3 * s, 0.017 * s), 0.42); HL(rrPath(sg > 0 ? X(0.315) : X(-0.385), Y(-0.16), 0.03 * s, 0.2 * s, 0.015 * s), 0.32)
+      }
+    } else {
+      const body = new Path(); body.move(P_(X(-0.31), Y(-0.03))); body.addLine(P_(X(-0.29), Y(0.19))); body.addQuadCurve(P_(X(-0.17), Y(0.29)), P_(X(-0.28), Y(0.29))); body.addLine(P_(X(0.17), Y(0.29))); body.addQuadCurve(P_(X(0.29), Y(0.19)), P_(X(0.28), Y(0.29))); body.addLine(P_(X(0.31), Y(-0.03))); body.closeSubpath()
+      SF(body)
+      const lid = new Path(); lid.move(P_(X(-0.38), Y(-0.07))); lid.addQuadCurve(P_(X(0.38), Y(-0.07)), P_(cx, Y(-0.27))); lid.closeSubpath(); SF(lid)
+      SF(rrPath(X(-0.4), Y(-0.09), 0.8 * s, 0.05 * s, 0.025 * s)); SF(ellPath(cx, Y(-0.225), 0.05 * s, 0.04 * s))
+      for (const sg of [-1, 1]) SF(rrPath(sg > 0 ? X(0.3) : X(-0.42), Y(0.02), 0.12 * s, 0.065 * s, 0.03 * s))
+      HL(rrPath(X(-0.24), Y(0.0), 0.05 * s, 0.2 * s, 0.025 * s), 0.38); HL(rrPath(X(-0.24), Y(-0.15), 0.18 * s, 0.03 * s, 0.015 * s), 0.4)
+      if (!lit) fillPath(ctx, rrPath(X(-0.31), Y(-0.03), 0.62 * s, 0.012 * s, 0.006 * s), "#05070C", 0.5)
+    }
+    return
+  }
   if (A === "C") {                                   // minimal line icons
     const w = 0.075 * s
     if (kind === "train") {
@@ -2293,7 +2513,7 @@ function questArt(ctx, kind, cx, cy, s, d, pal, u) {
     return
   }
   if (A === "A") {                                    // steaming pot: lid + knob, rounded body, side handles, three wisps
-    for (const sx of [-0.16, 0, 0.16]) steam(ctx, X(sx), Y(-0.17), Y(-0.48), s, lit ? hi : SILVER, lit ? 0.85 : 0.45, 0.055 * s)
+    for (const sx of [-0.16, 0, 0.16]) steam(ctx, X(sx), Y(-0.17), Y(__POT_FIT === 2 ? -0.32 : __POT_FIT ? -0.38 : -0.48), s, lit ? hi : SILVER, lit ? 0.85 : 0.45, 0.055 * s)
     const bp = new Path(); bp.move(P_(X(-0.34), Y(-0.02))); bp.addLine(P_(X(0.34), Y(-0.02))); bp.addLine(P_(X(0.32), Y(0.24))); bp.addQuadCurve(P_(X(0.2), Y(0.35)), P_(X(0.31), Y(0.35))); bp.addLine(P_(X(-0.2), Y(0.35))); bp.addQuadCurve(P_(X(-0.32), Y(0.24)), P_(X(-0.31), Y(0.35))); bp.closeSubpath()
     F(bp, 0.98); O(bp)
     for (const sg of [-1, 1]) { const hp = rrPath(sg > 0 ? X(0.32) : X(-0.47), Y(0.03), 0.15 * s, 0.07 * s, 0.035 * s); F(hp, 0.9); O(hp) }
@@ -2310,15 +2530,94 @@ function questArt(ctx, kind, cx, cy, s, d, pal, u) {
   for (const fx of [-0.12, 0, 0.12]) seg(ctx, X(fx), Y(0.0), X(fx), Y(0.2), lit ? pal.glow : SILVER, lit ? 0.55 : 0.35, 0.03 * s)
   H(ellPath(X(-0.08), Y(-0.26), 0.08 * s, 0.05 * s), 0.55)
 }
+// v13.14: the quest panel's "today's quest" header + x/2 counter are replaced by a star (questHeader: 1 brings the old header back)
+//   sapphire (1/2 deep #1E4FD8, 2/2 bright #2F6BFF, ice core, #0F52BA glow, violet edge) · same day boundary as the tiles: shown only while today's trainToday/cookToday say done
+//   questStar 1 = sparkle (default) · 2 = classic 5-point · 3 = sparkle + flare · questStarPos "R" badge on the right tile's top-right corner (default) / "M" badge between the tiles' tops · questStarEmpty 1 = faint outline at 0/2
+const QHEAD = CFG.questHeader === 1 || CFG.questHeader === true
+const QSTAR = ["1", "2", "3"].includes(String(CFG.questStar || "0")) ? String(CFG.questStar) : "0"   // v13.15: star off by default (questStar 1/2/3 brings a v13.14 star back)
+const QSTAR_POS = String(CFG.questStarPos || "R").toUpperCase() === "M" ? "M" : "R"
+const QSTAR_EMPTY = CFG.questStarEmpty === 1 || CFG.questStarEmpty === true
+const QSTAR_TY = () => QB_BOT_U                         // v13.14: no header -> tiles flush up; their top clearance = the verse box's bottom clearance (was 24u)
+function sparkP(cx, cy, rs, k, rot) {                   // concave sparkle through tips rs[i]; k = waist (x the shorter neighbouring tip)
+  const n = rs.length, p = new Path(), tip = (i) => { const a = rot + i * Math.PI * 2 / n; return P_(cx + Math.cos(a) * rs[i % n], cy + Math.sin(a) * rs[i % n]) }
+  p.move(tip(0))
+  for (let i = 0; i < n; i++) { const b = rot + (i + 0.5) * Math.PI * 2 / n, r = Math.min(rs[i % n], rs[(i + 1) % n]) * k; p.addQuadCurve(tip(i + 1), P_(cx + Math.cos(b) * r, cy + Math.sin(b) * r)) }
+  p.closeSubpath(); return p
+}
+function star5P(cx, cy, R, r, rot) { const pts = []; for (let i = 0; i < 10; i++) { const a = rot + i * Math.PI / 5, q = i % 2 ? r : R; pts.push([cx + Math.cos(a) * q, cy + Math.sin(a) * q]) } return qPath(pts) }
+function questStar(ctx, cx, cy, n, u, design) {        // n = quests done (0..2)
+  const up = -Math.PI / 2, big = n >= 2   // v13.14 sapphire: 1/2 deep sapphire, 2/2 brighter radiant sapphire with an ice-white core
+  const WG = big ? "#F4F9FF" : "#E8F2FF", G1 = big ? "#2F6BFF" : "#1E4FD8", G0 = G1, GL = "#0F52BA", VI = "#7A6CFF"
+  const bloom = (r, hex, a, k) => { for (let i = 0; i < k; i++) dot(ctx, cx, cy, r * (1 - i / k), hex, a) }
+  if (n <= 0) { if (QSTAR_EMPTY) strokeP(ctx, design === "2" ? star5P(cx, cy, 3.6 * u, 1.5 * u, up) : sparkP(cx, cy, [3.8 * u, 3.8 * u, 3.8 * u, 3.8 * u], 0.3, up), SILVER, 0.3, 0.45 * u); return }
+  if (design === "2") {                                 // classic 5-point star, rounded glow; 2/2 adds a halo ring + spokes
+    const R = (big ? 5.6 : 4.4) * u
+    bloom(R * (big ? 3 : 2), GL, big ? 0.05 : 0.04, 8); bloom(R * (big ? 1.5 : 1.2), VI, 0.025, 4)
+    if (big) { arcStroke(ctx, cx, cy, R * 1.55, 0, Math.PI * 2, "#9CC2FF", 0.35, 0.4 * u); for (let k = 0; k < 10; k++) { const a = up + k * Math.PI / 5 + Math.PI / 5; seg(ctx, cx + Math.cos(a) * R * 1.05, cy + Math.sin(a) * R * 1.05, cx + Math.cos(a) * R * 1.35, cy + Math.sin(a) * R * 1.35, WG, 0.35, 0.35 * u) } }
+    strokeP(ctx, star5P(cx, cy, R, R * 0.45, up), VI, 0.45, 0.6 * u)
+    fillPath(ctx, star5P(cx, cy, R, R * 0.45, up), G1, 1)
+    fillPath(ctx, star5P(cx, cy, R * 0.55, R * 0.25, up), WG, big ? 0.9 : 0.6)
+    return
+  }
+  const R = (big ? 6.4 : 4.8) * u
+  bloom(R * (big ? 2.8 : 1.9), GL, big ? 0.055 : 0.045, 9); bloom(R * (big ? 1.4 : 1.1), VI, big ? 0.03 : 0.022, 5)
+  if (big) {                                            // 2/2: 8-point radiant sparkle (4 long + 4 short), white-hot core, twinkle ring
+    if (design === "3") { seg(ctx, cx - R * 2.1, cy, cx + R * 2.1, cy, WG, 0.22, 0.35 * u); seg(ctx, cx, cy - R * 1.6, cx, cy + R * 1.6, WG, 0.16, 0.3 * u) }
+    const PR = ["#9FE7FF", "#C9B8FF", "#FFFFFF", "#8FB8FF", "#FFC8F0", "#B8FFF0"]   // faint prismatic twinkle ring (design 3)
+    for (let k = 0; k < 12; k++) { const a = k * Math.PI / 6 + 0.13; dot(ctx, cx + Math.cos(a) * R * 1.45, cy + Math.sin(a) * R * 1.45, (k % 3 ? 0.18 : 0.3) * u, design === "3" ? PR[k % 6] : WG, k % 3 ? 0.4 : 0.7) }
+    strokeP(ctx, sparkP(cx, cy, [R, R * 0.5, R, R * 0.5, R, R * 0.5, R, R * 0.5], 0.36, up), VI, 0.4, 0.5 * u)
+    fillPath(ctx, sparkP(cx, cy, [R, R * 0.5, R, R * 0.5, R, R * 0.5, R, R * 0.5], 0.36, up), G1, 1)
+    fillPath(ctx, sparkP(cx, cy, [R * 0.62, R * 0.32, R * 0.62, R * 0.32, R * 0.62, R * 0.32, R * 0.62, R * 0.32], 0.36, up), WG, 0.9)
+    dot(ctx, cx, cy, R * 0.16, "#FFFFFF", 1)
+  } else {                                              // 1/2: 4-point gold sparkle with a soft glow
+    if (design === "3") { seg(ctx, cx - R * 1.7, cy, cx + R * 1.7, cy, WG, 0.16, 0.3 * u); for (const [dx, dy, r] of [[-1.25, -0.85, 1.3], [1.15, 0.9, 1.0]]) fillPath(ctx, sparkP(cx + dx * R, cy + dy * R, [r * u, r * u, r * u, r * u], 0.3, up), WG, 0.75) }
+    strokeP(ctx, sparkP(cx, cy, [R, R * 0.78, R, R * 0.78], 0.28, up), VI, 0.4, 0.45 * u)
+    fillPath(ctx, sparkP(cx, cy, [R, R * 0.78, R, R * 0.78], 0.28, up), G0, 1)
+    fillPath(ctx, sparkP(cx, cy, [R * 0.55, R * 0.42, R * 0.55, R * 0.42], 0.28, up), WG, 0.7)
+  }
+}
+// v13.16 balanced quest block (no header, stacked tiles): the verse sits a fixed gap under the tiles, takes the biggest size (≤ QV_FMAX) at which
+//   tiles + gap + verse + reference fit between the QB_BOT_U clearances, and the whole group is centred vertically (tile top edge ↔ reference baseline),
+//   so the top and bottom clearances are always equal and no hole opens between the tiles and the verse. Text spans exactly the tiles' left..right edges.
+const QV_FMAX = 16.5, QV_GAP = 8, QV_LH = 1.3, QV_RZ = 6, QV_RGAP = 2.6, QV_CAP = 0.68, QV_REFB = 2.2
+function questBlock(u, H, th, mw) {
+  const [v, ref] = thisHoursVerse(), cmin = QB_BOT_U * u, room = H - 2 * cmin
+  const lay = (z) => { const f = z * u, L = wrapWords(v, f, mw), lh = f * QV_LH, top = QV_GAP * u - (lh / 2 - QV_CAP * f), Hv = L.length * lh + QV_RGAP * u + QV_RZ * u
+    return { f, z, L, lh, top, Hv, span: th + top + Hv - QV_REFB * u, v, ref } }
+  let best = null
+  for (let z = QV_FMAX; z >= 5.6 - 0.001; z -= 0.2) { const o = lay(z); if (o.L.length <= 7 && o.span <= room) { best = o; break } }
+  if (!best) best = lay(5.6)
+  best.ty = Math.max(cmin * 0.6, (H - best.span) / 2)
+  return best
+}
+function drawQuestVerse(ctx, B, tx, mw, y0, u, hot) {
+  const { f, L, lh, ref } = B, rz = QV_RZ * u, y = y0 + lh / 2
+  const sx = tx - 5.2 * u, s2 = 1.9 * u                                      // the sparkle hangs in the margin; the text edge sits on the tile edge
+  seg(ctx, sx - s2, y, sx + s2, y, hot || SILVER, 0.55, 0.35 * u); seg(ctx, sx, y - s2, sx, y + s2, hot || SILVER, 0.55, 0.35 * u); dot(ctx, sx, y, 0.6 * u, "#FFFFFF", 0.8)
+  L.forEach((l, i) => text(ctx, l, FUT(false, f), f, SILVER, 0.9, tx, y + i * lh, "left", mw + 30 * u))
+  text(ctx, "— " + ref, FUT(false, rz), rz, hot || SILVER, 0.7, tx, y + (L.length - 1) * lh + lh / 2 + QV_RGAP * u + rz / 2, "left", mw + 30 * u)
+  if (globalThis.__VF) globalThis.__VF.push([B.z, L.length])
+}
 function panelQuestB(ctx, W, H, u) {
   const { a: done, n } = questState(), pal = QGOLD ? QPAL(n ? 2 : 0) : QPAL(n), s = LIVE.streaks
-  const x0 = 198 * u, x1 = W - 24 * u, gp = 5 * u, tw = (x1 - x0 + 8 * u - gp) / 2, ty = (QB_TOP_U * u) + 7 * u, th = QSK.th * u   // v13.7: header + tiles lifted 6u · v13.9: taller stacked tiles
+  const x0 = 198 * u, x1 = W - 24 * u, gp = 5 * u, tw = (x1 - x0 + 8 * u - gp) / 2, th = QSK.th * u
+  const TL = x0 - 4 * u, TR = x0 - 4 * u + 2 * tw + gp, BLK = !QHEAD && QSTACK !== "ROW" && CFG.verseAnchor !== "C" && CFG.verseAnchor !== "B" ? questBlock(u, H, th, TR - TL - 0.4 * u) : null
+  const ty = QHEAD ? (QB_TOP_U * u) + 7 * u : BLK ? Math.round(BLK.ty * 3) / 3 : QSTAR_TY() * u   // v13.7: header + tiles lifted 6u · v13.9: taller stacked tiles · v13.14: no header -> tiles up 4.5u
   const dv = QSTACK === "ROW" ? 8 : 6                                                                  // v13.9: divider a little closer so the verse keeps its room
-  panelHead(ctx, x0, x1, (QB_TOP_U * u), u, "today's quest", pal.acc, n, 2, n ? pal.name : SILVER, n ? 1 : 0.55, "done")
+  if (QHEAD) panelHead(ctx, x0, x1, (QB_TOP_U * u), u, "today's quest", pal.acc, n, 2, n ? pal.name : SILVER, n ? 1 : 0.55, "done")
+  const starAt = () => { if (!QHEAD && QSTAR !== "0") questStar(ctx, QSTAR_POS === "M" ? x0 - 4 * u + tw + gp / 2 : x1 + 1.5 * u, ty + (QSTAR_POS === "M" ? 0.5 : 1.8) * u, n, u, QSTAR) }   // overlaid badge, drawn after the tiles
   const P = s ? streakParts(s, u, QSK.k) : null
-  QUEST_ROWS.forEach((row, i) => questTile(ctx, x0 - 4 * u + i * (tw + gp), ty, tw, th, u, row[2], qName(i), P && P[i], done[i], pal))
+  __QN = n
+  __QSL = QUEST_ROWS.map((row, i) => ({ label: qName(i), p: P && P[i], bold: !!done[i] }))   // v13.12: shared tile geometry
+  try { QUEST_ROWS.forEach((row, i) => questTile(ctx, x0 - 4 * u + (QSK.side || QSK.mode || QSK.grid || QSK.g2 ? Math.round(i * (tw + gp) * 3) / 3 : i * (tw + gp)), ty, tw, th, u, row[2], qName(i), P && P[i], done[i], pal)) } finally { __QSL = null }   // F/G: tile step snapped to whole @3x pixels so both tiles rasterise the same
+  starAt()
+  if (BLK) {                                                                // v13.16: divider centred in the tile→verse gap, spanning the tiles' inner width; verse text on the tile edges
+    const gy = ty + th + QV_GAP * u * 0.5; seg(ctx, TL + 8 * u, gy, TR - 8 * u, gy, "#FFFFFF", 0.07, 0.5)
+    return drawQuestVerse(ctx, BLK, TL - 0.4 * u, TR - TL - 0.4 * u, ty + th + BLK.top, u, pal.acc)
+  }
   seg(ctx, x0, ty + th + dv * u, x1, ty + th + dv * u, "#FFFFFF", 0.07, 0.5)
-  verseFill(ctx, x0 - 3 * u, x1 + 5 * u, ty + th + (dv + 2) * u, H - QB_BOT_U * u, u, SILVER, 0.9, pal.acc, 13, 7, QSTACK === "ROW" ? 5 : 7, QSTACK === "ROW")   // v13.9: up to 7 lines so long verses fill the box; any spare room split above + below   // anchored so the reference sits as far from the bottom as the header from the top
+  if (QHEAD) verseFill(ctx, x0 - 3 * u, x1 + 5 * u, ty + th + (dv + 2) * u, H - QB_BOT_U * u, u, SILVER, 0.9, pal.acc, 13, 7, QSTACK === "ROW" ? 5 : 7, QSTACK === "ROW")
+  else verseFill(ctx, x0 - 3 * u, x1 + 5 * u, ty + th + (dv + 2) * u, H - (QSTAR_TY() - 2.233) * u, u, SILVER, 0.9, pal.acc, 15.5, 7, 7, QSTACK === "ROW" || CFG.verseAnchor !== "C")   // v13.14 (verseAnchor "C" = centre the spare room instead of bottom-anchoring): the freed header room goes to the verse (up to 15.5pt); a full box puts the reference baseline as far from the bottom as the tiles are from the top   // v13.9: up to 7 lines so long verses fill the box; any spare room split above + below   // anchored so the reference sits as far from the bottom as the header from the top
 }
 // chaos · RESTRICTED, compact: all five tiers in one list (locked bright, still-free faint) or a 2-column chip grid, then the streak line, then the verse
 function panelRestrictedA(ctx, W, H, u, pal, LK, st) {
