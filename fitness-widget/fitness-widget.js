@@ -1,5 +1,5 @@
-// Mister 14 · Fitness Quest widget
-// Scriptable · small · built-in galaxy background (BG_MODE = "galaxy", no setup needed)
+// Mister 14 · Fitness Quest widget · v2 (premium galaxy: medal stars, Train | Cook bar, chaos blood theme)
+// Scriptable · small + medium · built-in galaxy background drawn live (no setup needed)
 //
 // SETUP: run this script once in the Scriptable app, then add a small Scriptable widget to your
 // home screen and choose this script. Pick a font look with FONT_SET (1-6) below.
@@ -16,6 +16,7 @@
 // shows the last stats it fetched, then the SNAPSHOT below.
 
 // ===================== CONFIG =====================
+const XP_STYLE = "orbit"                          // XP ring look: "orbit" comet on an orbit (recommended) · "planet" ringed planet + tenth marks · "bar" slim horizontal comet bar
 const STYLE = "ring"                              // "ring" · ring2 Orbit · ring3 Twin · ring4 Dial · ring5 Halo · ring6 Minimal · ring7 Filigree · ring8 Level Core · "crest" · "sword"
 const BG_MODE = "galaxy"                          // "galaxy" = built-in deep-space background, no setup · "wallpaper" = see-through look cropped from a home-screen screenshot
 const FONT_SET = 3                                // 1 Classic · 2 Avenir · 3 Futura · 4 Copperplate · 5 Optima & Bodoni · 6 Script & Mono
@@ -36,6 +37,9 @@ const SNAPSHOT = {
   next: "Gold Tiger King", xpIn: 3145, xpNeed: 5000,
   exercise: 7, cooking: 7, savings: 0.01,
   badges: 48, prismatic: 1, diamond: 0, gold: 0,
+  trainToday: 0, cookToday: 0,                                  // today's quest (Widget tab)
+  chaosState: "clear", chaosCover: 0, chaosNames: "",           // chaos lock: worst uncleansed medal type, tiers restricted (0-5), their names
+  chaosTierNames: "LIFE360|DISCORD|5555 Number|YOUTRIP|All Messaging Platforms", cleansedMedals: 0,
 }
 // ==================================================
 
@@ -60,8 +64,11 @@ const fm = FileManager.local()
 const bgPath = (fam) => fm.joinPath(fm.documentsDirectory(), `grok-fitness-bg-${fam}.png`)
 const cachePath = fm.joinPath(fm.documentsDirectory(), "grok-fitness-stats.json")
 const now = new Date()
+// live render state, filled from the Widget-tab stats in buildWidget() (replaces the preview-only mocks)
+let __BAND = null, __STAR_DRAW = null                   // galaxy band geometry + the deferred medal-star pass (set per render)
+const LIVE = { chaos: null, sky: {}, quest: { train: false, cook: false }, reason: { xp: 0, cleansed: 0 } }
 
-// ---------------- helpers (shared with the moon widget) ----------------
+// ---------------- helpers ----------------
 function clamp(v, a, b) { return Math.min(b, Math.max(a, v)) }
 function smooth(t) { return t * t * (3 - 2 * t) }
 function rgb(hex) { return [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)) }
@@ -69,7 +76,21 @@ function mixHex(a, b, t) {
   const A = rgb(a), B = rgb(b)
   return "#" + A.map((v, i) => Math.round(v + (B[i] - v) * t).toString(16).padStart(2, "0")).join("")
 }
-function col(hex, a) { return new Color(hex, a) }
+// chaos "blood moon" theme: while a chaos lock is on, EVERY colour (stars, band, ring, glass, text, flames) is pulled onto a blood-red ramp
+// by its brightness, so light stays light (text keeps its contrast) and dark stays dark. Strength: gold .40 < diamond .69 < prismatic 1 (fully blood red)
+let __BLOOD = 0
+const BLOOD_RAMP = [[0, [0, 0, 0]], [0.2, [70, 3, 12]], [0.48, [196, 18, 36]], [0.76, [255, 112, 104]], [1, [255, 226, 220]]]
+const BLOOD_K = { gold: 0.4, diamond: 0.69, prismatic: 1 }
+const __bloodCache = new Map()
+function bloodHex(hex, k) {
+  const key = hex + k; let v = __bloodCache.get(key); if (v) return v
+  const c = rgb(hex), L = Math.min(1, (0.5 * Math.max(...c) + 0.5 * (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2])) / 255)
+  let i = 1; while (i < BLOOD_RAMP.length - 1 && BLOOD_RAMP[i][0] < L) i++
+  const [l0, A] = BLOOD_RAMP[i - 1], [l1, B] = BLOOD_RAMP[i], t = (L - l0) / (l1 - l0)
+  v = "#" + c.map((x, j) => Math.round(x + (A[j] + (B[j] - A[j]) * t - x) * k).toString(16).padStart(2, "0")).join("")
+  __bloodCache.set(key, v); return v
+}
+function col(hex, a) { return new Color(__BLOOD > 0 && typeof hex === "string" && /^#[0-9A-Fa-f]{6}$/.test(hex) ? bloodHex(hex, __BLOOD) : hex, a) }
 function rng(seed) { // mulberry32
   let s = seed >>> 0
   return () => {
@@ -179,7 +200,9 @@ function parseStats(text) {
   const rows = parseCSV(text), out = {}
   const KEYS = { xp: "xp", totalxp: "xp", rank: "rank", rankicon: "rankIcon", level: "level", lv: "level", next: "next", nextrank: "next",
     xpin: "xpIn", xpneed: "xpNeed", exercise: "exercise", cooking: "cooking", savings: "savings", badges: "badges",
-    medals: "badges", prismatic: "prismatic", diamond: "diamond", gold: "gold" }
+    traintoday: "trainToday", cooktoday: "cookToday", chaosstate: "chaosState", chaoscover: "chaosCover", chaosnames: "chaosNames",
+    chaostiernames: "chaosTierNames", cleansedmedals: "cleansedMedals",
+    medals: "badges", medalstotal: "medalsTotal", prismatic: "prismatic", diamond: "diamond", gold: "gold" }
   for (const r of rows) {
     const k = KEYS[String(r[0] || "").toLowerCase().replace(/[^a-z]/g, "")]
     if (k && r[1] !== undefined && r[1] !== "" && !/^#[A-Z]/.test(r[1])) out[k] = r[1]   // skip sheet errors like #N/A
@@ -201,7 +224,7 @@ function parseStats(text) {
     for (const [k, e] of [["prismatic", "🌈"], ["diamond", "💎"], ["gold", "🥇"]]) { const m = any(new RegExp(e + "\\s*(\\d+)", "u")); if (m) out[k] = m[1] }
   }
   if (out.rank && !out.rankIcon) Object.assign(out, splitRank(out.rank))
-  for (const k of ["xp", "level", "xpIn", "xpNeed", "exercise", "cooking", "savings", "badges", "prismatic", "diamond", "gold"])
+  for (const k of ["xp", "level", "xpIn", "xpNeed", "exercise", "cooking", "savings", "badges", "medalsTotal", "prismatic", "diamond", "gold", "trainToday", "cookToday", "chaosCover", "cleansedMedals"])
     if (out[k] !== undefined) { const n = num(out[k]); if (n === undefined) delete out[k]; else out[k] = n }
   return out.xp !== undefined ? out : null
 }
@@ -222,16 +245,16 @@ async function loadStats() {
 }
 
 // ---------------- art ----------------
-function drawStars(ctx, W, H, count, moon) {
+function drawStars(ctx, W, H, count, avoid) {
   const r = rng(STAR_SEED)
   const tints = ["#FFFFFF", "#FFFFFF", "#F3F5FF", "#FFE9CC", "#D6E2FF"]
   for (let i = 0; i < count; i++) {
     const x = r() * W, y = r() * H, s = r(), tint = tints[Math.floor(r() * tints.length)]
     let a = 0.12 + r() * 0.4
     const rad = 0.25 + Math.pow(s, 3) * 0.9
-    const dm = Math.hypot(x - moon.x, y - moon.y)
-    if (dm < moon.R * 1.05) continue
-    if (dm < moon.R * 2.6) a *= 0.55 + Math.random() * 0.9  // twinkle near the moon
+    const dm = Math.hypot(x - avoid.x, y - avoid.y)
+    if (dm < avoid.R * 1.05) continue
+    if (dm < avoid.R * 2.6) a *= 0.55 + Math.random() * 0.9  // twinkle near the ring
     if (rad > 0.75) dot(ctx, x, y, rad * 2.6, tint, a * 0.12)
     dot(ctx, x, y, rad, tint, clamp(a, 0, 0.85))
   }
@@ -410,7 +433,7 @@ function shield(ctx, x, y, h, emoji) {                      // knight's crest, p
   else twinkle(ctx, x, y + h * 0.02, h * 0.3, 0.95)
 }
 // ---- streak flames: 9 tiers that grow with the streak (anything past 888 keeps the 888 look) ----
-const FLAME_TIERS = [0, 10, 50, 100, 200, 300, 400, 500, 888]
+const FLAME_TIERS = [0, 10, 20, 50, 100, 150, 200, 250, 300, 365, 400, 450, 500, 555, 600, 666, 700, 777, 888]   // G 14: each number is where a tier STARTS (700-776 = 700 design, 888+ = final); 1-9 days = base design 0; the shown streak keeps counting
 const flameTier = (days) => { let t = 0; FLAME_TIERS.forEach((d, i) => { if (days >= d) t = i }); return t }
 const FLAME_H = [8.5, 11, 12, 12.5, 13, 13.5, 14, 14.5, 16]          // icon height per tier, in widget points (× u)
 function flameLayer(ctx, x, y, h, hex, a) {          // one teardrop; y = vertical centre
@@ -429,109 +452,173 @@ function sparks(ctx, x, y, h, hex, n, seed) {
   const r = rng(seed)
   for (let i = 0; i < n; i++) dot(ctx, x + (r() - 0.5) * h * 0.9, y - h * (0.45 + r() * 0.35), h * (0.035 + r() * 0.035), hex, 0.7 + r() * 0.3)
 }
-// kind: "train" (ember tint) or "cook" (gold tint); tiers 0-3 keep the tint, 4+ share a scheme
-// with a white-ice core for TRAIN and a warm gold core for COOK
-function streakFlame(ctx, x, y, u, days, kind) {
-  const t = flameTier(days), h = FLAME_H[t] * u, train = kind === "train"
-  const core = train ? "#F4FAFF" : "#FFF1C4"
-  const base = y + 5.5 * u                                           // all tiers stand on the same baseline
-  const c = base - h / 2
-  switch (t) {
-    case 0:                                                          // ember
-      dot(ctx, x, base - h * 0.3, h * 0.45, train ? "#C8643A" : "#B8903F", 0.08)
-      flameLayer(ctx, x, c, h, train ? "#C8643A" : "#B8903F", 0.85)
-      flameLayer(ctx, x, c + h * 0.22, h * 0.45, train ? "#FFB47A" : "#F4D58A", 0.85)
-      break
-    case 1:                                                          // flame
-      flame(ctx, x, c, h, train ? EMBER : GOLD, train ? "#FFE3A3" : "#FFF6DA")
-      break
-    case 2:                                                          // double flame
-      dot(ctx, x, c + h * 0.12, h * 0.6, train ? "#FF6A3A" : "#E0A040", 0.08)
-      flameLayer(ctx, x + h * 0.16, c - h * 0.06, h * 1.02, train ? "#E0502E" : "#C98A2E", 0.9)
-      flameLayer(ctx, x - h * 0.1, c + h * 0.05, h * 0.86, train ? "#FF9A5A" : GOLD, 0.95)
-      flameLayer(ctx, x - h * 0.08, c + h * 0.24, h * 0.44, train ? "#FFE3A3" : "#FFF6DA", 0.95)
-      break
-    case 3:                                                          // gold flame with sparks
-      dot(ctx, x, c + h * 0.1, h * 0.62, GOLD, 0.09)
-      flameLayer(ctx, x + h * 0.14, c - h * 0.04, h, train ? "#E9703A" : "#D9A24A", 0.9)
-      flameLayer(ctx, x - h * 0.08, c + h * 0.04, h * 0.9, train ? "#FFB347" : GOLD_BRIGHT, 0.97)
-      flameLayer(ctx, x - h * 0.06, c + h * 0.22, h * 0.48, "#FFF6DA", 1)
-      sparks(ctx, x, c, h, GOLD_BRIGHT, 4, 31 + days % 3)
-      break
-    case 4:                                                          // blue-hot
-      dot(ctx, x, c + h * 0.1, h * 0.62, "#5AA8FF", 0.1)
-      flameLayer(ctx, x, c, h, "#3F86FF", 0.95)
-      flameLayer(ctx, x, c + h * 0.12, h * 0.72, "#8CC4FF", 0.95)
-      flameLayer(ctx, x, c + h * 0.26, h * 0.4, core, 1)
-      sparks(ctx, x, c, h, "#CFE6FF", 3, 41)
-      break
-    case 5:                                                          // violet twin flame
-      dot(ctx, x, c + h * 0.1, h * 0.66, "#9B6BFF", 0.1)
-      flameLayer(ctx, x - h * 0.2, c + h * 0.06, h * 0.82, "#7A52E0", 0.9)
-      flameLayer(ctx, x + h * 0.2, c + h * 0.06, h * 0.82, "#7A52E0", 0.9)
-      flameLayer(ctx, x, c - h * 0.04, h, "#B48CFF", 0.95)
-      flameLayer(ctx, x, c + h * 0.2, h * 0.5, core, 1)
-      sparks(ctx, x, c, h, "#E2D4FF", 4, 53)
-      break
-    case 6:                                                          // white-gold with aura
-      for (let i = 0; i < 3; i++) dot(ctx, x, c + h * 0.08, h * (0.46 + 0.14 * i), GOLD, 0.06)
-      flameLayer(ctx, x, c, h, "#FFD774", 0.95)
-      flameLayer(ctx, x, c + h * 0.1, h * 0.76, "#FFF0C2", 0.97)
-      flameLayer(ctx, x, c + h * 0.26, h * 0.42, "#FFFFFF", 1)
-      sparks(ctx, x, c, h, "#FFF6DA", 5, 67)
-      break
-    case 7:                                                          // prismatic with crystals
-      for (let i = 0; i < 3; i++) dot(ctx, x, c + h * 0.08, h * (0.46 + 0.14 * i), i % 2 ? "#C3A6FF" : "#9CC8FF", 0.07)
-      flameLayer(ctx, x, c, h, "#9CC8FF", 0.95)
-      flameLayer(ctx, x, c + h * 0.08, h * 0.82, "#C3A6FF", 0.95)
-      flameLayer(ctx, x, c + h * 0.17, h * 0.62, "#F4E2B0", 0.97)
-      flameLayer(ctx, x, c + h * 0.28, h * 0.36, "#FFFFFF", 1)
-      lozenge(ctx, x - h * 0.5, c - h * 0.15, h * 0.06, h * 0.12, "#CFE0FA", 0.95)
-      lozenge(ctx, x + h * 0.52, c + h * 0.02, h * 0.05, h * 0.1, "#D9CCF5", 0.95)
-      lozenge(ctx, x + h * 0.3, c - h * 0.52, h * 0.05, h * 0.1, "#F3F4FA", 0.95)
-      break
-    default: {                                                       // 888: celestial inferno
-      for (let i = 0; i < 3; i++) dot(ctx, x, c + h * 0.05, h * (0.5 + 0.15 * i), i % 2 ? "#C3A6FF" : GOLD, 0.07)
-      ctx.setStrokeColor(col(GOLD_SOFT, 0.8)); ctx.setLineWidth(0.6)                         // halo ring
-      ctx.strokeEllipse(new Rect(x - h * 0.42, c - h * 0.72, h * 0.84, h * 0.24))
-      flameLayer(ctx, x - h * 0.3, c + h * 0.12, h * 0.7, "#7A9CFF", 0.9)                       // side flames
-      flameLayer(ctx, x + h * 0.3, c + h * 0.12, h * 0.7, "#A77CFF", 0.9)
-      flameLayer(ctx, x, c - h * 0.04, h * 1.04, "#9CC8FF", 0.95)
-      flameLayer(ctx, x, c + h * 0.06, h * 0.86, "#C3A6FF", 0.95)
-      flameLayer(ctx, x, c + h * 0.16, h * 0.64, GOLD_BRIGHT, 0.97)
-      flameLayer(ctx, x, c + h * 0.28, h * 0.36, "#FFFFFF", 1)
-      twinkle(ctx, x - h * 0.55, c - h * 0.42, h * 0.2, 1)
-      twinkle(ctx, x + h * 0.56, c - h * 0.2, h * 0.15, 0.9)
-      lozenge(ctx, x + h * 0.42, c - h * 0.62, h * 0.045, h * 0.09, "#F3F4FA", 0.95)
-    }
+// ---- realistic fire: layered teardrop tongues, white-yellow core → orange → red edge, soft glow, embers, haze ----
+// palette order: outer edge → … → core.  TRAIN = hotter orange-red · COOK = warmer gold-amber
+// streak flames: 19 designs = base (1-9 days) + the 18 tiers in FLAME_TIERS. Palette outer edge -> core.
+const FLAME_NAMES = ["Kindling", "Ember", "Spark", "Flame", "Blaze", "Furnace", "Blue Fire", "Cobalt", "Violet", "Solstice", "Solar", "Radiant", "Prism", "Aurora", "Nova", "Nebula", "Pulsar", "Ascendant", "Celestial Inferno"]
+const FP_TRAIN = [["#7A0B10", "#CF2414", "#FF4F18", "#FF8A26", "#FFC14A", "#FFF3B8"], ["#780A12", "#D42014", "#FF4A14", "#FF8A22", "#FFCB55", "#FFF6C8"], ["#6E0912", "#D81C14", "#FF4412", "#FF8F20", "#FFD060", "#FFFBE0"], ["#8A1010", "#E83A14", "#FF6A1A", "#FFA030", "#FFE08A", "#FFFFFF"]]
+const FP_COOK = [["#7C4A12", "#BE7219", "#E99A27", "#FFBE40", "#FFE08A", "#FFF8DA"], ["#7C4A12", "#C47A1A", "#EBA02A", "#FFC444", "#FFE49A", "#FFFAE0"], ["#7A4A10", "#C98418", "#F0AA28", "#FFCB48", "#FFEBA8", "#FFFDF0"], ["#8A5A12", "#D49020", "#F6B632", "#FFD25A", "#FFF0B8", "#FFFFFF"]]
+const FP_HI = [   // shared from Blue Fire up; the two outer layers take a family rim (train crimson / cook amber)
+  ["#2338B8", "#3F7CFF", "#8CC4FF", "#DCEEFF", "#FFFFFF"],      // 6 blue
+  ["#1A2A9A", "#2F5CE8", "#6AA8FF", "#CFE6FF", "#FFFFFF"],      // 7 cobalt
+  ["#5A2CC8", "#9468FF", "#C3A6FF", "#EADFFF", "#FFFFFF"],      // 8 violet
+  ["#7A4CE0", "#A07CFF", "#E2D4FF", "#FFF0C2", "#FFFFFF"],      // 9 solstice (violet + gold core)
+  ["#E8944A", "#FFC05A", "#FFE2A0", "#FFF4D8", "#FFFFFF"],      // 10 solar white-gold
+  ["#F0A850", "#FFD070", "#FFEBB8", "#FFF8E8", "#FFFFFF"],      // 11 radiant
+  ["#EE8A5A", "#F6C46A", "#B8E8C0", "#CFE0FF", "#FFFFFF"],      // 12 prism (iridescent)
+  ["#3CC8A0", "#5AA8FF", "#A07CFF", "#F7A8D8", "#FFE9C8"],      // 13 aurora
+  ["#C23CA8", "#FF7AA0", "#FFC27A", "#FFF0C8", "#FFFFFF"],      // 14 nova
+  ["#5A6AF0", "#A77CFF", "#F4A8E0", "#F4E2B0", "#FFFFFF"],      // 15 nebula
+  ["#3AB8F0", "#9CE0FF", "#D8C8FF", "#FFF0D8", "#FFFFFF"],      // 16 pulsar
+  ["#E0B050", "#FFE08A", "#FFF0C8", "#E8F0FF", "#FFFFFF"],      // 17 ascendant
+  ["#7A5AF0", "#C3A6FF", "#9CC8FF", "#F4E2B0", "#FFFFFF"]]      // 18 celestial inferno
+const RIM = { train: ["#6A1030", "#B0204A"], cook: ["#6A4C10", "#B07A18"] }
+const firePal = (kind, T) => {
+  if (T < 6) return (kind === "cook" ? FP_COOK : FP_TRAIN)[T <= 1 ? 0 : T === 2 ? 1 : T === 3 ? 1 : T === 4 ? 2 : 3]
+  const h = FP_HI[T - 6], rim = RIM[kind] || RIM.train
+  return [rim[0], mixHex(rim[1], h[0], T >= 12 ? 0.55 : 0.35), h[0], h[1], h[3], h[4]]
+}
+const MAINS = {
+  1: [[0, 1, 0]],
+  2: [[-0.13, 0.84, -0.12], [0.1, 1, 0.1]],
+  3: [[-0.21, 0.76, -0.2], [0.21, 0.7, 0.2], [0, 1, 0]],
+  3.5: [[-0.22, 0.86, -0.12], [0.22, 0.86, 0.12], [0, 1.06, 0]],
+  5: [[-0.42, 0.6, -0.22], [-0.23, 0.86, -0.12], [0.23, 0.86, 0.12], [0.42, 0.6, 0.22], [0, 1.12, 0]],
+  7: [[-0.62, 0.46, -0.28], [-0.42, 0.66, -0.2], [-0.21, 0.9, -0.1], [0.21, 0.9, 0.1], [0.42, 0.66, 0.2], [0.62, 0.46, 0.28], [0, 1.16, 0]],
+}
+// per-design: m = main flames, side = small tongues, spark = embers, glow, halo (1 ring, 2 prismatic ring, 3 double ring), rays, aura, crown = circlet flames
+const FIRE_SPEC = [
+  { m: 1, side: 0, spark: 1, glow: 0.8, hs: 0.84 },                                   // 0   1-9 days Kindling
+  { m: 1, side: 1, spark: 2, glow: 0.95 },                                            // 1   10 Ember
+  { m: 1, side: 2, spark: 3, glow: 1.05 },                                            // 2   20 Spark
+  { m: 2, side: 2, spark: 3, glow: 1.15 },                                            // 3   50 Flame (twin)
+  { m: 3, side: 2, spark: 5, glow: 1.3 },                                             // 4   100 Blaze
+  { m: 3, side: 3, spark: 6, glow: 1.45 },                                            // 5   150 Furnace
+  { m: 3, side: 2, spark: 5, glow: 1.4 },                                             // 6   200 Blue Fire
+  { m: 3.5, side: 3, spark: 6, glow: 1.5, halo: 1 },                                  // 7   250 Cobalt
+  { m: 3.5, side: 3, spark: 6, glow: 1.5, halo: 1 },                                  // 8   300 Violet
+  { m: 3.5, side: 4, spark: 7, glow: 1.55, halo: 1, rays: 4 },                        // 9   365 Solstice
+  { m: 3.5, side: 4, spark: 6, glow: 1.6, halo: 1, rays: 4 },                         // 10  400 Solar
+  { m: 5, side: 4, spark: 8, glow: 1.6, halo: 1, rays: 6 },                           // 11  450 Radiant
+  { m: 3.5, side: 4, spark: 8, glow: 1.6, halo: 2, rays: 6 },                         // 12  500 Prism
+  { m: 5, side: 4, spark: 10, glow: 1.7, halo: 2, rays: 6 },                          // 13  555 Aurora
+  { m: 5, side: 4, spark: 10, glow: 1.8, halo: 2, rays: 8, aura: 1 },                 // 14  600 Nova
+  { m: 5, side: 4, spark: 12, glow: 1.9, halo: 2, rays: 8, aura: 1 },                 // 15  666 Nebula
+  { m: 5, side: 4, spark: 12, glow: 1.9, halo: 3, rays: 8, aura: 1 },                 // 16  700 Pulsar
+  { m: 7, side: 4, spark: 14, glow: 2.0, halo: 3, rays: 8, aura: 1, crown: 3 },       // 17  777 Ascendant
+  { m: 7, side: 4, spark: 18, glow: 2.2, halo: 3, rays: 10, aura: 2, crown: 5 },      // 18  888 Celestial Inferno
+]
+const FIRE_HUES = ["#FF8FA8", "#FFC27A", "#FFE9A8", "#B8F0C8", "#9CC8FF", "#C3A6FF"]
+const fireSeed = () => (Math.floor(now.getTime() / 600000))
+function tonguePath(x, b, h, w, lean, kink) {       // teardrop standing on y = b: round belly, S-curved tip at b - h, bending sideways by lean × h
+  const p = new Path(), tx = x + lean * h
+  p.move(new Point(x, b + h * 0.035))
+  p.addCurve(new Point(tx, b - h), new Point(x - w * 1.45, b + h * 0.03), new Point(x - w * 0.55 + lean * h * 0.15, b - h * (0.56 + kink)))
+  p.addCurve(new Point(x, b + h * 0.035), new Point(x + w * 0.45 + lean * h * 0.85, b - h * (0.44 - kink)), new Point(x + w * 1.45, b + h * 0.03))
+  p.closeSubpath(); return p
+}
+function mainFlame(ctx, x, b, h, w, lean, pal, pre) {
+  const sc = [1, 0.85, 0.69, 0.53, 0.37, 0.21]
+  fillPath(ctx, tonguePath(x, b, h * 1.07, w * 1.2, lean, 0.05), pal[0], 0.2)
+  sc.forEach((k, i) => fillPath(ctx, tonguePath(x, b - h * 0.03 * i, h * k, w * (0.25 + 0.75 * k), lean * (1 - i * 0.16), 0.05), pal[i], i < 2 ? 0.97 : 1))
+}
+function fire(ctx, x, b, h, kind, tier, seed, lit) {
+  const T = Math.max(0, Math.min(18, tier)), pal = firePal(kind || "train", T), sp = FIRE_SPEC[T], mains = MAINS[h < 24 ? Math.min(sp.m, 3.5) : sp.m].map(([dx, hs, ln]) => [dx, hs * (sp.hs || 1), ln]), r = rng(seed * 97 + 13)
+  if (!lit) {                                                      // unlit: cold outline + one dim ember at the base
+    strokeP(ctx, tonguePath(x, b, h * 0.9, h * 0.25, 0.04, 0.02), SILVER, 0.3, Math.max(0.6, h * 0.045))
+    dot(ctx, x, b - h * 0.1, h * 0.22, pal[1], 0.06); dot(ctx, x, b - h * 0.1, h * 0.085, pal[2], 0.5); dot(ctx, x, b - h * 0.1, h * 0.04, pal[4], 0.9)
+    return
   }
+  const big = h >= 24, cy = b - h * 0.45, w = h * 0.31
+  // aura + glow (many faint rings, so no banding)
+  if (sp.aura) for (let i = 0; i < 8; i++) dot(ctx, x, cy, h * (1.7 - i * 0.14) * (sp.aura > 1 ? 1.15 : 1), pal[1], (0.016 + i * 0.004) * sp.aura)
+  for (let i = 0; i < 10; i++) dot(ctx, x, b - h * 0.42, h * (1.1 - i * 0.085) * (0.8 + sp.glow * 0.25), pal[2], (0.012 + i * 0.0035) * Math.min(1.6, sp.glow))
+  dot(ctx, x, b - h * 0.25, h * 0.36, pal[3], 0.05)
+  // light spokes behind the flame
+  if (sp.rays && big) for (let k = 0; k < sp.rays; k++) {
+    const an = -Math.PI / 2 + (k - (sp.rays - 1) / 2) * (Math.PI * 1.55 / sp.rays) + 0.1, r0 = h * 0.62, r1 = h * (k % 2 ? 0.92 : 1.12)
+    seg(ctx, x + Math.cos(an) * r0, cy + Math.sin(an) * r0, x + Math.cos(an) * r1, cy + Math.sin(an) * r1, pal[4], 0.3, Math.max(0.6, h * 0.018))
+  }
+  // halo ring(s)
+  if (sp.halo) {
+    const rr = h * (big ? 0.92 : 0.54), segs = sp.halo >= 2 ? 36 : 1
+    if (segs === 1) arcStroke(ctx, x, cy, rr, 0, Math.PI * 2, pal[3], 0.34, Math.max(0.5, h * 0.02))
+    else for (let k = 0; k < segs; k++) {
+      const a0 = k / segs * Math.PI * 2, a1 = (k + 1.15) / segs * Math.PI * 2
+      arcStroke(ctx, x, cy, rr, a0, a1, mixHex(FIRE_HUES[Math.floor(k / segs * 6)], FIRE_HUES[(Math.floor(k / segs * 6) + 1) % 6], (k / segs * 6) % 1), 0.55, Math.max(0.6, h * 0.026))
+    }
+    if (sp.halo >= 3) arcStroke(ctx, x, cy, rr * 1.12, 0, Math.PI * 2, pal[4], 0.16, Math.max(0.4, h * 0.012))
+  }
+  // heat haze
+  if (big) for (let k = 0; k < 2; k++) {
+    const hx = x + (k ? 1 : -1) * h * 0.14, y0 = b - h * 1.0, pts = []
+    for (let j = 0; j <= 12; j++) pts.push([hx + Math.sin(j * 0.62 + k * 2.2 + r() * 0.5) * h * 0.07, y0 - j * h * 0.04])
+    for (let j = 1; j < pts.length; j++) seg(ctx, pts[j - 1][0], pts[j - 1][1], pts[j][0], pts[j][1], pal[3], 0.02 * (1 - j / 13), Math.max(0.8, h * 0.16))
+  }
+  // side tongues
+  const sideAll = [[-0.2, 0.74, -0.16 - r() * 0.08], [0.22, 0.6, 0.17 + r() * 0.08], [-0.34, 0.5, -0.24], [0.36, 0.44, 0.24]].slice(0, sp.side)
+  for (const [dx, hs, ln] of sideAll) {
+    const tx = x + dx * h, th = h * hs
+    fillPath(ctx, tonguePath(tx, b, th, w * 0.8, ln, 0.04), pal[0], 0.92)
+    fillPath(ctx, tonguePath(tx, b - th * 0.02, th * 0.8, w * 0.62, ln * 0.85, 0.04), pal[1], 0.96)
+    fillPath(ctx, tonguePath(tx, b - th * 0.04, th * 0.56, w * 0.4, ln * 0.7, 0.03), pal[2], 0.96)
+  }
+  // main flames: outermost first, tallest (centre) on top
+  const order = mains.map((m, i) => [m, i]).sort((p, q) => Math.abs(q[0][0]) - Math.abs(p[0][0]))
+  for (const [[dx, hs, ln]] of order) mainFlame(ctx, x + dx * h, b, h * hs, w * (hs > 0.9 ? 1 : 0.88), ln + (r() - 0.5) * 0.05, pal)
+  // crown at the top tier: a small circlet of flames riding the halo
+  if (sp.crown && big) for (let k = -(sp.crown >> 1); k <= (sp.crown >> 1); k++) {
+    const an = -Math.PI / 2 + k * 0.42, rr = h * 0.92 * 1.12, cx0 = x + Math.cos(an) * rr, cy0 = cy + Math.sin(an) * rr, ch = h * (k === 0 ? 0.2 : 0.14 - Math.abs(k) * 0.012)
+    fillPath(ctx, tonguePath(cx0, cy0 + ch * 0.2, ch, ch * 0.32, k * 0.1, 0.03), "#F4C75A", 0.95)
+    fillPath(ctx, tonguePath(cx0, cy0 + ch * 0.25, ch * 0.55, ch * 0.2, k * 0.08, 0.03), "#FFF6DA", 1)
+  }
+  // rising embers
+  const cap = big ? sp.spark : Math.min(sp.spark, 2 + Math.floor(T / 4)), n = cap
+  const pc = T >= 12 ? FIRE_HUES : null
+  for (let i = 0; i < n; i++) {
+    const f = (i + 0.5 + r() * 0.5) / n, ex = x + (r() - 0.5) * h * (0.7 + mains.length * 0.12), ey = b - h * (1.08 + f * (big ? 0.5 : 0.17)) - r() * h * 0.05, sz = h * (0.026 + r() * 0.026) * (1 - f * 0.4)
+    const c = pc ? pc[i % 6] : (i % 2 ? pal[4] : pal[3])
+    dot(ctx, ex, ey, sz * 2.6, c, 0.07 * (1 - f * 0.5)); dot(ctx, ex, ey, sz, c, 0.95 - f * 0.4)
+  }
+  if (T >= 10 && big) twinkle(ctx, x + h * 0.62, b - h * 0.95, h * 0.16, 0.9, pal[4])
+  if (T >= 17) { twinkle(ctx, x - h * 0.58, b - h * 1.1, h * 0.14, 0.8); twinkle(ctx, x, b - h * 1.5, h * 0.2, 0.95, "#FFF3C8") }
+}
+const FLAME_H2 = [11, 11.8, 12.4, 13, 13.8, 14.4, 15, 15.4, 15.8, 16.2, 16.5, 16.8, 17.1, 17.4, 17.7, 18, 18.3, 18.7, 19.5]
+function streakFlame(ctx, x, y, u, days, kind) {         // x = icon centre, y = number's centre line → every flame stands on y + 6.8u
+  const t = flameTier(days), h = FLAME_H2[t] * u
+  fire(ctx, x, y + 6.8 * u, h, kind, t, (days * 7 + (kind === "train" ? 1 : 2)) + fireSeed(), days > 0)
   return h
 }
 // stat numbers: gold from tier 3, glowing from tier 6, bright glow at the top tier
 function tierNumber(ctx, str, t, x, y, u) {
-  const f = Font.mediumSystemFont(10.5 * u)
-  if (t >= 8) glowText(ctx, str, Font.semiboldSystemFont(10.5 * u), 10.5 * u, GOLD_BRIGHT, x, y, "left", 2.2)
-  else if (t >= 6) glowText(ctx, str, f, 10.5 * u, GOLD_BRIGHT, x, y, "left", 1.4)
-  else text(ctx, str, f, 10.5 * u, t >= 3 ? GOLD : GOLD_SOFT, 0.95, x, y, "left", 40)
+  const f = FUT(false, 11.5 * u)
+  if (t >= 8) glowText(ctx, str, FUT(true, 11.5 * u), 11.5 * u, GOLD_BRIGHT, x, y, "left", 1.6)
+  else if (t >= 6) glowText(ctx, str, f, 11.5 * u, GOLD_BRIGHT, x, y, "left", 1)
+  else text(ctx, str, f, 11.5 * u, t >= 3 ? GOLD : GOLD_SOFT, 0.97, x, y, "left", 40 * u)
 }
-function streakNumber(ctx, v, x, y, u) { tierNumber(ctx, String(v), flameTier(v), x, y, u) }
+function streakNumber(ctx, v, x, y, u) { const t = flameTier(v); tierNumber(ctx, String(v), t >= 18 ? 8 : t >= 10 ? 6 : t >= 4 ? 3 : 0, x, y, u) }   // number styling: gold from 100 days, glow from 400, bright at 888
 function badgeNumber(ctx, v, x, y, u) { tierNumber(ctx, String(v), medalTier(v), x, y, u) }
+// frosted-glass panel: faint fill, hairline border, a bright top edge that fades out, soft inner shade at the bottom
+function glass(ctx, x, y, w, h, r, hex, a) {
+  fillPath(ctx, rrPath(x, y, w, h, r), "#FFFFFF", 0.03 * (a || 1))
+  fillPath(ctx, rrPath(x + 0.5, y + h * 0.55, w - 1, h * 0.45 - 0.5, r), "#000000", 0.12)
+  strokeP(ctx, rrPath(x, y, w, h, r), hex || "#FFFFFF", 0.15 * (a || 1), 0.55)
+  for (let i = 0; i < 12; i++) { const f = i / 12; seg(ctx, x + r + (w - 2 * r) * (0.5 - 0.5 * (1 - f)), y + 0.45, x + r + (w - 2 * r) * (0.5 + 0.5 * (1 - f)), y + 0.45, "#FFFFFF", 0.022 + 0.01 * f, 0.7) }
+}
+function statPanel(ctx, cx, gap, y0, y1, u) {           // one glass bar under the ring: 2 equal cells (train | cook) centred on the ring's axis
+  glass(ctx, cx - gap * 1.5, y0, gap * 3, y1 - y0, 9 * u)
+  const a0 = y0 + 4 * u, a1 = y0 + 24 * u, n = 10           // subtle centre divider beside the numbers only: a hairline that fades out at both ends
+  for (let i = 0; i < n; i++) { const f = 1 - Math.abs((i + 0.5) / n * 2 - 1); seg(ctx, cx, a0 + (a1 - a0) * i / n, cx, a0 + (a1 - a0) * (i + 1) / n, "#FFFFFF", 0.03 + 0.11 * f, 0.5) }
+}
 function statRow(ctx, s, cx, y, gap, u) {
-  const f = Font.mediumSystemFont(10.5 * u), cap = Font.semiboldSystemFont(5.6 * u)
-  const items = [["train", s.exercise, "TRAIN"], ["cook", s.cooking, "COOK"], ["medal", s.badges, "BADGES"]]
+  const SM = {}
+  const items = [["train", SM.train != null ? SM.train : s.exercise, "TRAIN"], ["cook", SM.cook != null ? SM.cook : s.cooking, "COOK"]]
   items.forEach(([kind, v, label], i) => {
-    const x = cx + (i - 1) * gap, ix = x - 6 * u
-    let nx = x + 1.5 * u
-    if (kind === "medal") {
-      const h = badgeMedal(ctx, ix, y, u, v)
-      nx = Math.max(nx, ix + h * (medalTier(v) >= 5 ? 0.52 : 0.42) + 1.2 * u)
-      badgeNumber(ctx, v, nx, y + 0.5 * u, u)
-    } else {
-      const h = streakFlame(ctx, ix, y, u, v, kind)
-      nx = Math.max(nx, ix + h * 0.5 + 1.2 * u)
-      streakNumber(ctx, v, nx, y + 0.5 * u, u)
-    }
-    text(ctx, track(label), cap, 5.6 * u, SILVER, 0.42, x + 3 * u, y + 11.5 * u, "center", 60)
+    const x = cx + (i ? 0.75 : -0.75) * gap, T = kind === "medal" ? 0 : flameTier(v), iw = (9 + Math.min(6, T * 0.4)) * u, gp = 3 * u, nw = String(v).length * 6.6 * u
+    const left = x - (iw + gp + nw) / 2, ix = left + iw / 2, nx = left + iw + gp
+    if (kind === "medal") { badgeMedal(ctx, ix, y, u, v); badgeNumber(ctx, v, nx, y + 0.5 * u, u) }
+    else { streakFlame(ctx, ix, y, u, v, kind); streakNumber(ctx, v, nx, y + 0.5 * u, u) }
+    text(ctx, track(label), FUT(false, 5.2 * u), 5.2 * u, SILVER, 0.5, x, y + 11.6 * u, "center", 60 * u)
   })
 }
 // savings rate as "+2.50% P.A." (2 decimals, 3 only when the value needs them)
@@ -696,16 +783,127 @@ function ringVariant(ctx, W, H, bg, s, u, pct) {
   }
 }
 
+// ============ XP ORBIT: comet / planet riding an orbit, teal → gold trail, star dust, constellation milestones ============
+// New Widget-tab keys: none. Uses xp, xpIn, xpNeed, level, next (next rank name). "% to next level" = xpIn / xpNeed.
+const XP_PAL = even("#1FA89A", "#5FD0C2", "#BFE3B0", "#F2D58F", "#FFD774")
+const XP_PAL_RED = even("#7A0A16", "#C4202E", "#FF5A4A", "#FFB0A0", "#FFE0D8")
+const xpCol = (f, red) => starlightAt(clamp(f, 0, 1), red ? XP_PAL_RED : XP_PAL)
+const XPS = () => XP_STYLE
+function xpNode(ctx, x, y, u, lit, big, red, comp) {   // a milestone star; comp = two tiny companion stars joined by hairlines (a mini asterism)
+  const c = lit ? (red ? "#FFC9B8" : "#FFE3A3") : SILVER, k = big ? 1.3 : 1
+  if (comp) for (const [cx2, cy2] of comp) seg(ctx, x, y, cx2, cy2, c, lit ? 0.4 : 0.16, 0.4)
+  if (comp) for (const [cx2, cy2] of comp) { dot(ctx, cx2, cy2, 0.9 * u, c, lit ? 0.85 : 0.3) }
+  if (lit) { dot(ctx, x, y, 4.4 * u * k, c, 0.1); twinkle(ctx, x, y, 3.3 * u * k, 0.95, c) }
+  else { strokeEll(ctx, x, y, 1.5 * u * k, SILVER, 0.5, 0.5); dot(ctx, x, y, 0.45 * u, SILVER, 0.5) }
+}
+function xpOrbit(ctx, cx, cy, R, u, pct, red, variant) {
+  const a0 = -Math.PI / 2, a1 = a0 + Math.PI * 2 * pct, P = (a, r) => [cx + Math.cos(a) * r, cy + Math.sin(a) * r]
+  const planetV = variant === "planet"
+  arcStroke(ctx, cx, cy, R, 0, Math.PI * 2, SILVER, planetV ? 0.16 : 0.1, planetV ? 0.7 : 2.6 * u)     // the orbit
+  if (planetV) for (let i = 1; i < 10; i++) if (i % 5) { const [x, y] = P(a0 + i / 10 * Math.PI * 2, R); dot(ctx, x, y, 0.75 * u, pct >= i / 10 ? xpCol(i / 10 / Math.max(pct, 0.01), red) : SILVER, pct >= i / 10 ? 0.9 : 0.35) }
+  // the trail: tapered, teal at the tail → gold at the head
+  const n = Math.max(3, Math.ceil(160 * pct)), bw = (planetV ? 2.1 : 3.4) * u
+  for (let i = 0; i < n; i++) {
+    if (planetV && i % 4 === 3) continue
+    const f0 = i / n, f1 = (i + 1) / n, fm = (f0 + f1) / 2, w = bw * (0.28 + 0.72 * Math.pow(fm, 0.9)), c = xpCol(fm, red)
+    const p0 = P(a0 + (a1 - a0) * f0, R), p1 = P(a0 + (a1 - a0) * f1 + 0.004, R)
+    seg(ctx, p0[0], p0[1], p1[0], p1[1], c, 0.03 + 0.05 * fm, w * 4.2)
+    seg(ctx, p0[0], p0[1], p1[0], p1[1], c, 0.12 + 0.1 * fm, w * 2.2)
+    seg(ctx, p0[0], p0[1], p1[0], p1[1], c, 1, w)
+    if (!planetV) seg(ctx, p0[0], p0[1], p1[0], p1[1], "#FFFFFF", 0.3 * fm, w * 0.3)
+  }
+  // star dust drifting along the filled part, thicker toward the head
+  const dq = rng(STAR_SEED + 31)
+  for (let i = 0, nd = Math.round(10 + 46 * pct); i < nd; i++) {
+    const f = Math.pow(dq(), 0.7), a = a0 + (a1 - a0) * f, rr = R + (dq() - 0.42) * (3 + 7 * f) * u, [x, y] = P(a, rr), c = xpCol(f, red), z = (0.26 + 0.5 * dq()) * u
+    if (Math.abs(rr - R) < bw * 0.5 * (0.3 + f) && dq() < 0.7) continue          // keep the core of the trail clean
+    if (i % 9 === 0) twinkle(ctx, x, y, 1.9 * u, 0.7, c); else { dot(ctx, x, y, z * 2.4, c, 0.06); dot(ctx, x, y, z, c, 0.5 + 0.45 * dq()) }
+  }
+  // milestones: 25 / 50 / 75 % as constellation nodes, the top star is the next level
+  for (let i = 0; i < 4; i++) {
+    const a = a0 + i * Math.PI / 2, [x, y] = P(a, R), lit = i > 0 && pct >= i / 4 - 0.002
+    const t = [Math.cos(a + Math.PI / 2), Math.sin(a + Math.PI / 2)], rd = [Math.cos(a), Math.sin(a)]
+    const comp = [[x + rd[0] * 5.2 * u - t[0] * 3.6 * u, y + rd[1] * 5.2 * u - t[1] * 3.6 * u], [x + rd[0] * 3.0 * u + t[0] * 4.6 * u, y + rd[1] * 3.0 * u + t[1] * 4.6 * u]]
+    if (i === 0) { twinkle(ctx, x, y, 4.6 * u, 0.55, red ? "#FFC9B8" : GOLD_SOFT); strokeEll(ctx, x, y, 2.1 * u, red ? "#FFC9B8" : GOLD_SOFT, 0.6, 0.55) }
+    else xpNode(ctx, x, y, u, lit, false, red, comp)
+  }
+  // head: comet (coma + spark) or ringed planet
+  const [hx, hy] = P(a1, R)
+  if (planetV) { planet(ctx, hx, hy, 4.7 * u); twinkle(ctx, hx - 4.4 * u, hy - 4.4 * u, 3.2 * u, 0.7, "#FFF6DA") }
+  else {
+    for (let i = 0; i < 6; i++) dot(ctx, hx, hy, (10 - i * 1.5) * u, red ? "#FF9A8A" : "#FFD774", 0.035 + i * 0.012)
+    dot(ctx, hx, hy, 2.9 * u, "#FFF3C8", 0.9); dot(ctx, hx, hy, 1.7 * u, "#FFFFFF", 1)
+    twinkle(ctx, hx, hy, 7.6 * u, 0.95, "#FFF3C8")
+  }
+}
+function xpChip(ctx, x, y, str, u, red) {              // glass pill: "64%"
+  const w = 17 * u, h = 8.6 * u
+  fillPath(ctx, rrPath(x - w / 2, y - h / 2, w, h, h / 2), "#05060C", 0.78); strokeP(ctx, rrPath(x - w / 2, y - h / 2, w, h, h / 2), red ? "#FF9A8A" : GOLD, 0.55, 0.5)
+  text(ctx, str, FUT(true, 6.2 * u), 6.2 * u, red ? "#FFD0C4" : GOLD_BRIGHT, 1, x, y + 0.2 * u, "center", w)
+}
+function xpLabels(ctx, s, cx, cy, u, pct, CMP, red) {   // centre of the ring: TOTAL · XP · xpIn / xpNeed · % to next level
+  const f = CMP ? 0.82 : 1, size = (CMP ? 18 : 22) * u, g = red ? "#FFC9B8" : GOLD
+  text(ctx, track("TOTAL"), FUT(false, 6.2 * u * f), 6.2 * u * f, red ? "#FFB0A0" : GOLD_SOFT, 0.75, cx, cy - (CMP ? 17 : 21) * u, "center")
+  glowText(ctx, fmtNum(s.xp), FS.hero(size * FS.heroK), size, g, cx, cy - (CMP ? 4 : 5) * u, "center", 1.2)
+  text(ctx, `${fmtNum(s.xpIn)} / ${fmtNum(s.xpNeed)}`, FUT(true, 6.2 * u * f), 6.2 * u * f, SILVER, 0.85, cx, cy + (CMP ? 9 : 11) * u, "center", 60 * u)
+  text(ctx, track(`${Math.round(pct * 100)}% TO LV ${s.level + 1}`), FUT(false, 5.4 * u * f), 5.4 * u * f, red ? "#FFC9B8" : "#7FD6CC", 0.95, cx, cy + (CMP ? 17 : 20) * u, "center", 60 * u)
+}
+function xpNextRow(ctx, s, cx, y, u, W) {              // under the level: next rank on the left, savings on the right
+  text(ctx, track("NEXT"), FUT(false, 4.8 * u), 4.8 * u, "#7FD6CC", 0.85, cx - 73 * u, y - 0.2 * u, "left", 30 * u)
+  text(ctx, tr(s.next), FUT(true, 5.2 * u), 5.2 * u, GOLD_SOFT, 0.85, cx - 73 * u + 16 * u, y, "left", 80 * u)
+  textR(ctx, track(fmtSavings(s.savings)), FUT(false, 5.2 * u), 5.2 * u, GOLD_SOFT, 0.62, cx + 73 * u, y, 60 * u)
+}
+function xpBar(ctx, W, H, u, s, pct, red, CMP) {        // slim horizontal comet bar (medium / small alternative)
+  const x0 = 15 * u, x1 = 155 * u, cx = 85 * u, y = (CMP ? 66 : 84) * u, dy = (CMP ? -13 : 0) * u, g = red ? "#FFC9B8" : GOLD
+  text(ctx, track("TOTAL"), FUT(false, 6.2 * u), 6.2 * u, red ? "#FFB0A0" : GOLD_SOFT, 0.75, cx, (CMP ? 17 : 32) * u, "center")
+  glowText(ctx, fmtNum(s.xp), FS.hero(26 * u * FS.heroK), (CMP ? 22 : 28) * u, g, cx, (CMP ? 35 : 52) * u, "center", 1.2)
+  const hx = x0 + (x1 - x0) * pct
+  text(ctx, `${fmtNum(s.xpIn)} / ${fmtNum(s.xpNeed)} XP`, FUT(true, 6.2 * u), 6.2 * u, SILVER, 0.85, x0, y - 9 * u, "left", 80 * u)
+  textR(ctx, `${Math.round(pct * 100)}%`, FUT(true, 8.4 * u), 8.4 * u, red ? "#FFD0C4" : GOLD_BRIGHT, 1, x1, y - 9.4 * u, 40 * u)
+  seg(ctx, x0, y, x1, y, SILVER, 0.12, 2.8 * u)
+  const n = Math.max(4, Math.ceil(120 * pct)), bw = 3.4 * u
+  for (let i = 0; i < n; i++) {
+    const f0 = i / n, f1 = (i + 1) / n, fm = (f0 + f1) / 2, w = bw * (0.28 + 0.72 * Math.pow(fm, 0.9)), c = xpCol(fm, red)
+    const xa = x0 + (hx - x0) * f0, xb = x0 + (hx - x0) * f1 + 0.2
+    seg(ctx, xa, y, xb, y, c, 0.03 + 0.05 * fm, w * 4.2); seg(ctx, xa, y, xb, y, c, 0.12 + 0.1 * fm, w * 2.2); seg(ctx, xa, y, xb, y, c, 1, w)
+    seg(ctx, xa, y - w * 0.18, xb, y - w * 0.18, "#FFFFFF", 0.3 * fm, w * 0.28)
+  }
+  const dq = rng(STAR_SEED + 33)
+  for (let i = 0, nd = Math.round(8 + 40 * pct); i < nd; i++) {
+    const f = Math.pow(dq(), 0.7), x = x0 + (hx - x0) * f, yy = y + (dq() - 0.45) * (3 + 7 * f) * u, c = xpCol(f, red)
+    if (Math.abs(yy - y) < bw * 0.5 * (0.3 + f) && dq() < 0.7) continue
+    if (i % 9 === 0) twinkle(ctx, x, yy, 1.9 * u, 0.7, c); else { dot(ctx, x, yy, 0.6 * u, c, 0.06); dot(ctx, x, yy, (0.26 + 0.5 * dq()) * u, c, 0.5 + 0.45 * dq()) }
+  }
+  for (let i = 1; i <= 4; i++) {                        // milestones 25/50/75, finish star at 100
+    const x = x0 + (x1 - x0) * i / 4, lit = pct >= i / 4 - 0.002, sd = i % 2 ? -1 : 1
+    if (i === 4) { twinkle(ctx, x, y, 4.6 * u, 0.55, red ? "#FFC9B8" : GOLD_SOFT); strokeEll(ctx, x, y, 2.1 * u, red ? "#FFC9B8" : GOLD_SOFT, 0.6, 0.55) }
+    else xpNode(ctx, x, y, u, lit, false, red, [[x - 3.4 * u, y + sd * 5.4 * u], [x + 4.6 * u, y + sd * 3.1 * u]])
+  }
+  for (let i = 0; i < 6; i++) dot(ctx, hx, y, (10 - i * 1.5) * u, red ? "#FF9A8A" : "#FFD774", 0.035 + i * 0.012)
+  dot(ctx, hx, y, 2.9 * u, "#FFF3C8", 0.9); dot(ctx, hx, y, 1.7 * u, "#FFFFFF", 1); twinkle(ctx, hx, y, 7.6 * u, 0.95, "#FFF3C8")
+  const ly = y + 12 * u
+  text(ctx, track("LEVEL"), FUT(false, 5.6 * u), 5.6 * u, "#E3E7EF", 0.8, x0, ly, "left", 30 * u); glowText(ctx, String(s.level), FUT(true, 9.5 * u), 9.5 * u, GOLD_SOFT, x0 + 21 * u, ly - 0.3 * u, "left", 0.8)
+  textR(ctx, track(`LV ${s.level + 1}`), FUT(true, 6.4 * u), 6.4 * u, "#7FD6CC", 0.95, x1, ly, 40 * u)
+  text(ctx, tr("Next · " + s.next), FUT(true, 5.4 * u), 5.4 * u, GOLD_SOFT, 0.85, cx, ly + 10 * u, "center", 150 * u)
+}
+
 function render(W, H, bg, s, source) {
+  const CH = LIVE.chaos || null, MED = !!(CH && CH.family === "medium"), CMP = !!(CH && !MED)
+  __BLOOD = SKY() && CH ? (BLOOD_K[CH.state] || 0) : 0                      // blood-moon theme strength for this render
   const ctx = new DrawContext()
   ctx.size = new Size(W, H)
   ctx.opaque = true
   ctx.respectScreenScale = true
   if (bg) ctx.drawImageInRect(bg, new Rect(0, 0, W, H))
   else {
-    ctx.setFillColor(new Color("#05050B")); ctx.fillRect(new Rect(0, 0, W, H))
-    for (let i = 0; i < 10; i++) dot(ctx, W * 0.7, H * 0.3, W * (0.9 - i * 0.07), i % 2 ? "#3A2A6A" : "#1B2A55", 0.035)   // faint nebula
+    ctx.setFillColor(col(SKY() ? "#03030A" : "#05050B", 1)); ctx.fillRect(new Rect(0, 0, W, H))
+    if (!SKY()) for (let i = 0; i < 10; i++) dot(ctx, W * 0.7, H * 0.3, W * (0.9 - i * 0.07), i % 2 ? "#3A2A6A" : "#1B2A55", 0.035)   // faint nebula
   }
+  if (SKY()) drawMilkyWay(ctx, W, H, nightP(skyHour()), skyPal(), s)
+  if (SKY() && REASON()) reasonsBand(ctx, W, H, skyPal())
+  chaosTint(ctx, W, H)
+  if (SKY() && __STAR_DRAW) { __STAR_DRAW(); __STAR_DRAW = null }   // after the eclipse and the chaos tint: red-bled, never hidden
+  if (SKY()) skyVignette(ctx, W, H)
   const u = H / 170
   const pct = clamp(s.xpNeed > 0 ? s.xpIn / s.xpNeed : 0, 0, 1)
   const heroF = FS.hero(24 * u * FS.heroK)
@@ -758,21 +956,30 @@ function render(W, H, bg, s, source) {
     text(ctx, `${s.xpNeed - s.xpIn} to ${s.next}`, Font.regularSystemFont(7 * u), 7 * u, SILVER, 0.55, tx + 1, 99 * u, "left", W)
     statRow(ctx, s, tx + 50 * u, 132 * u, 38 * u, u)
   } else { // ring
-    const cx = W / 2, cy = 66 * u, R = 41 * u
-    drawStars(ctx, W, H, bg ? 18 : 50, { x: cx, y: cy, R: R * 1.15 })
+    const cx = MED ? 85 * u : W / 2, cy = (CMP ? 50 : 66) * u, R = (CMP ? 32 : 41) * u
+    drawStars(ctx, W, H, SKY() ? 0 : bg ? 18 : 50, { x: cx, y: cy, R: R * 1.15 })
+    let LT = levelTier(s.level); if (CH && CH.state === "prismatic") LT = { ...LT, pal: even("#7A0A16", "#C4202E", "#FF5A4A", "#E8A090", "#9A1020"), tip: "#FFB0A0", text: "#FF9A8A", glow: 0.12 }
+    const RED = !!(CH && CH.state === "prismatic"), top = LT === LEVEL_TIERS[LEVEL_TIERS.length - 1], XS = XPS()
+    if (XS === "bar") {
+      xpBar(ctx, W, H, u, s, pct, RED, CMP)
+      if (!CMP) text(ctx, track(fmtSavings(s.savings)), FUT(false, 5.6 * u), 5.6 * u, GOLD_SOFT, 0.62, cx, 128 * u, "center", W)
+      else text(ctx, track(fmtSavings(s.savings)), FUT(false, 5.6 * u), 5.6 * u, GOLD_SOFT, 0.62, cx, 106 * u, "center", W)
+    } else {
     for (let i = 0; i < 36; i++) {                                   // faint tick marks, like a star dial
       const a = i / 36 * Math.PI * 2, r0 = R + 4.5 * u, r1 = R + (i % 9 === 0 ? 7.5 : 5.8) * u
       seg(ctx, cx + Math.cos(a) * r0, cy + Math.sin(a) * r0, cx + Math.cos(a) * r1, cy + Math.sin(a) * r1, i % 9 === 0 ? GOLD : SILVER, i % 9 === 0 ? 0.45 : 0.16, 0.5)
     }
-    const LT = levelTier(s.level), top = LT === LEVEL_TIERS[LEVEL_TIERS.length - 1]
     if (top) {                                                       // max level: gold halo + crystal sparkles
       arcStroke(ctx, cx, cy, R + 10 * u, Math.PI * 0.72, Math.PI * 2.28, GOLD_SOFT, 0.4, 0.6)   // open at the bottom, clear of "Level N"
     }
-    prismLine(ctx, arcPts(cx, cy, R, 0, Math.PI * 2, 72), 3 * u, 0, 1, 0.09, LT.pal)     // track
-    const a0 = -Math.PI / 2, a1 = a0 + Math.PI * 2 * pct, n = Math.max(2, Math.ceil(72 * pct))
-    if (LT.glow > 0.1) prismLine(ctx, arcPts(cx, cy, R, a0, a1, n), 13 * u, 0, pct, 0.04, LT.pal)   // wide aura
-    prismLine(ctx, arcPts(cx, cy, R, a0, a1, n), 8 * u, 0, pct, LT.glow, LT.pal)    // glow
-    prismLine(ctx, arcPts(cx, cy, R, a0, a1, n), 3 * u, 0, pct, 1, LT.pal)
+    for (let i = 1; i <= 5; i++) arcStroke(ctx, cx, cy, R - (2.6 + i * 1.5) * u, 0, Math.PI * 2, "#000000", 0.13 * (1 - i / 6), 1.7 * u)   // soft inner shadow
+    arcStroke(ctx, cx, cy, R + 3.4 * u, 0, Math.PI * 2, "#FFFFFF", 0.07, 0.45)                  // hairline outer ring
+    for (let i = 0; i < 60; i++) {                                    // tiny inner tick marks
+      const a = i / 60 * Math.PI * 2, r0 = R - 5.4 * u, r1 = R - (i % 5 ? 6.5 : 7.6) * u
+      seg(ctx, cx + Math.cos(a) * r0, cy + Math.sin(a) * r0, cx + Math.cos(a) * r1, cy + Math.sin(a) * r1, "#FFFFFF", i % 5 ? 0.09 : 0.2, 0.4)
+    }
+    const a0 = -Math.PI / 2, a1 = a0 + Math.PI * 2 * pct
+    xpOrbit(ctx, cx, cy, R, u, pct, RED, XS)
     if (top) {
       const cr = ["#CFE0FA", "#D9CCF5", "#F3F4FA", "#FFE3A3"]
       ;[-60, 0, 35, 145, 180, 240].forEach((deg, i) => {
@@ -781,16 +988,1313 @@ function render(W, H, bg, s, source) {
       })
       twinkle(ctx, cx - R * 0.95, cy - R * 0.95, 4.5 * u, 0.9); twinkle(ctx, cx + R * 1.0, cy + R * 0.9, 3.5 * u, 0.8)
     }
-    twinkle(ctx, cx + Math.cos(a1) * R, cy + Math.sin(a1) * R, (LT.glow > 0.1 ? 8 : 7) * u, 1, LT.tip)
-    text(ctx, track(`TOTAL`), tiny, 6.4 * u, GOLD_SOFT, 0.75, cx, cy - 16 * u, "center")
-    glowText(ctx, fmtNum(s.xp), heroF, 24 * u, GOLD, cx, cy + 1 * u, "center", 1.2)
-    text(ctx, track(`XP · ${Math.round(pct * 100)}%`), tiny, 6.4 * u, SILVER, 0.55, cx, cy + 18 * u, "center")
-    glowText(ctx, `Level ${s.level}`, rankF, 13 * u, LT.text, cx, 120 * u, "center", top ? 1.6 : 1)
-    text(ctx, track(fmtSavings(s.savings)), tiny, 6 * u, GOLD_SOFT, 0.7, cx, 131 * u, "center", W)
-    statRow(ctx, s, cx, 149 * u, 50 * u, u)
+    if (XS === "planet") { const hr = R + 15 * u, hxx = cx + Math.cos(a1) * hr, hyy = cy + Math.sin(a1) * hr; xpChip(ctx, hxx, hyy, `${Math.round(pct * 100)}%`, u, RED) }
+    xpLabels(ctx, s, cx, cy, u, pct, CMP, RED)
+    {
+      const ly = (CMP ? 97 : 120) * u, nd = String(s.level).length, gw = 22 * u + 4.5 * u + nd * 8.6 * u, lx = cx - gw / 2
+      text(ctx, track("LEVEL"), FUT(false, 6.6 * u), 6.6 * u, LT.text, 0.8, lx, ly + 2.6 * u, "left", 40 * u)
+      glowText(ctx, String(s.level), FUT(true, 14.5 * u), 14.5 * u, LT.text, lx + 26.5 * u + nd * 4.3 * u, ly, "center", top ? 1.4 : 0.8)
+    }
+    xpNextRow(ctx, s, cx, (CMP ? 107 : 131) * u, u, W)
+    }
+    const sgap = (MED ? 46 : 50) * u
+    statPanel(ctx, cx, sgap, (CMP ? 112.5 : 137.5) * u, H - 4 * u, u)
+    statRow(ctx, s, cx, (CMP ? 123 : 147.5) * u, sgap, u)
   }
+  chaosPanel(ctx, W, H, s)
   statusDot(ctx, W, u, source)
   return ctx.getImage()
+}
+
+// ---------------- CHAOS (live: LIVE.chaos = {state, family, variant, lock} from chaosState / chaosCover / chaosTierNames) ----------------
+let CHAOS_TIERS = ["LIFE360", "DISCORD", "5555 Number", "YOUTRIP", "All Messaging Platforms"]
+const CPAL = {
+  prismatic: { acc: "#FF4D5E", glow: "#FF1F3A", name: "#FFE6E0", lock: 5 },
+  diamond:   { acc: "#B59CFF", glow: "#7A4DFF", name: "#EFEAFF", lock: 3 },
+  gold:      { acc: "#EBB055", glow: "#E08A1E", name: "#FFF1D6", lock: 1 },
+  clear:     { acc: "#7FD6CC", glow: "#2BB8A8", name: "#E6F7F5", lock: 0 },
+}
+const FUT = (bold, z) => new Font(bold ? "Futura-Bold" : "Futura-Medium", z)
+const P_ = (x, y) => new Point(x, y)
+function rrPath(x, y, w, h, r) {
+  const p = new Path()
+  p.move(P_(x + r, y)); p.addLine(P_(x + w - r, y)); p.addQuadCurve(P_(x + w, y + r), P_(x + w, y))
+  p.addLine(P_(x + w, y + h - r)); p.addQuadCurve(P_(x + w - r, y + h), P_(x + w, y + h))
+  p.addLine(P_(x + r, y + h)); p.addQuadCurve(P_(x, y + h - r), P_(x, y + h))
+  p.addLine(P_(x, y + r)); p.addQuadCurve(P_(x + r, y), P_(x, y)); p.closeSubpath()
+  return p
+}
+function strokeP(ctx, p, hex, a, w) { ctx.addPath(p); ctx.setStrokeColor(col(hex, a)); ctx.setLineWidth(w); ctx.strokePath() }
+function glowRR(ctx, x, y, w, h, r, hex, a, spread) {         // soft outer glow = widening faint strokes
+  for (let i = 4; i >= 1; i--) strokeP(ctx, rrPath(x, y, w, h, r), hex, a * 0.28 / i * 1.6, spread * i / 4 * 2)
+}
+function textR(ctx, str, font, size, hex, a, xr, y, w) {
+  ctx.setFont(font); ctx.setTextColor(col(hex, a)); ctx.setTextAlignedRight()
+  ctx.drawTextInRect(str, new Rect(xr - w, y - size * 0.62, w, size * 1.5))
+}
+const tr = (s) => track(s.toUpperCase())
+// vector padlock, centred on (x, y); s = body width
+function lockIcon(ctx, x, y, s, hex, a, open) {
+  const bw = s, bh = s * 0.78, bx = x - bw / 2, by = y - bh * 0.28
+  const sx = open ? x + s * 0.22 : x
+  arcStroke(ctx, sx, by, s * 0.3, Math.PI, Math.PI * (open ? 1.85 : 2), hex, a, s * 0.16)
+  seg(ctx, sx - s * 0.3, by, sx - s * 0.3, by + s * 0.1, hex, a, s * 0.16)
+  if (!open) seg(ctx, sx + s * 0.3, by, sx + s * 0.3, by + s * 0.1, hex, a, s * 0.16)
+  fillPath(ctx, rrPath(bx, by, bw, bh, s * 0.16), hex, a)
+  dot(ctx, x, by + bh * 0.42, s * 0.1, "#12060A", Math.min(1, a))
+  seg(ctx, x, by + bh * 0.42, x, by + bh * 0.72, "#12060A", Math.min(1, a), s * 0.12)
+}
+function chaosTint(ctx, W, H) {
+  const C = LIVE.chaos; if (!C) return
+  const u = H / 170, st = C.state, pal = CPAL[st] || CPAL.clear
+  if (SKY() && st === "clear") return
+  const t = SKY() ? { gold: [0.08, "#120800"], diamond: [0.14, "#070318"], prismatic: [0.36, "#10000A"] }[st] : { gold: [0.05, "#2A1500"], diamond: [0.16, "#150A30"], prismatic: [0.36, "#380007"], clear: [0.1, "#001818"] }[st]
+  if (!t) return
+  ctx.setFillColor(col(t[1], t[0])); ctx.fillRect(new Rect(0, 0, W, H))
+  const hz = { prismatic: ["#B0001A", 0.075], diamond: ["#6A2CC8", 0.032], gold: ["#8A5A10", 0.02], clear: ["#1FA89A", 0.026] }[st]
+  const pts = st === "prismatic" ? [[0, H], [W, H], [W / 2, H + 12 * u], [0, 0], [W, 0], [W * 0.62, H * 0.5]] : [[0, H], [W, H], [W * 0.7, H * 0.6]]
+  for (const [vx, vy] of pts) for (let i = 0; i < 18; i++) dot(ctx, vx, vy, (80 - i * 4.2) * u, hz[0], hz[1] * 0.42 * (SKY() ? 0.55 : 1))
+  if (st === "prismatic") embers(ctx, W, H, u)
+}
+function embers(ctx, W, H, u) {                  // prismatic only: drifting embers + hairline cracks
+  const r = rng(909), x0 = (C_MED() ? 190 : 6) * u
+  for (let i = 0; i < (C_MED() ? 26 : 14); i++) {
+    const x = x0 + r() * (W - x0 - 6 * u), y = H * (0.35 + 0.62 * Math.pow(r(), 0.6)), k = 0.4 + r() * 0.9
+    dot(ctx, x, y, 3.2 * k * u, "#FF5A2A", 0.05); dot(ctx, x, y, 0.8 * k * u, i % 3 ? "#FF8A3A" : "#FFD08A", 0.55 + r() * 0.35)
+  }
+  const crack = (sx, sy, dx, dy, n, seed) => {
+    const q = rng(seed); let x = sx, y = sy
+    for (let i = 0; i < n; i++) {
+      const nx = x + dx * (5 + q() * 6) * u + (q() - 0.5) * 7 * u, ny = y + dy * (5 + q() * 6) * u + (q() - 0.5) * 7 * u
+      seg(ctx, x, y, nx, ny, "#FF3A3A", 0.1, 2.4 * u); seg(ctx, x, y, nx, ny, "#FF9A7A", 0.3, 0.55 * u)
+      if (i === 2) crack(nx, ny, -dy, dx * 0.6, 2, seed + 7)
+      x = nx; y = ny
+    }
+  }
+  if (C_MED()) { crack(W - 4 * u, H - 2 * u, -1, -0.5, 6, 11); crack(W * 0.5 + 10 * u, 0, 0.5, 1, 4, 23) }
+  else { crack(W - 2 * u, H - 2 * u, -1, -0.3, 5, 11) }
+}
+const C_MED = () => !!(LIVE.chaos && LIVE.chaos.family === "medium")
+// chaos look = variant A: no moon ever, the whole sky and UI turn blood red
+function chaosPanel(ctx, W, H, s) {
+  const C = LIVE.chaos; if (!C) return
+  const st = C.state === "cleansed" ? "clear" : C.state, pal = CPAL[st], LK = C.lock != null ? C.lock : pal.lock, v = C.variant || 1
+  const u = H / 170
+  if (C.family === "medium" && (v === 1 || (!LK && LIVE.quest))) {
+    glass(ctx, 184 * u, 12 * u, W - 196 * u, 154 * u, 12 * u, LK ? pal.acc : "#FFFFFF", 1)
+    if (LK) glowRR(ctx, 184 * u, 12 * u, W - 196 * u, 154 * u, 12 * u, pal.glow, 0.05, 6 * u)
+  }
+  if (!LK && LIVE.quest) { (C.family === "medium" ? panelQuest : stripQuest)(ctx, W, H, u); return }
+  if (LK && C.family === "medium") { panelRestricted(ctx, W, H, u, pal, LK, st); return }   // chaos: the quest panel becomes the list of what is restricted
+  const f = { 1: [panelLadder, strip1], 2: [panelCards, strip2], 3: [panelMeter, strip3] }[v]
+  ;(C.family === "medium" ? f[0] : f[1])(ctx, W, H, u, pal, LK, st)
+}
+// ---- chaos · medium side panel: "Today's quest" is replaced by the restricted list — only the tiers locked right now, in the blood theme ----
+function panelRestricted(ctx, W, H, u, pal, LK, st) {
+  const x0 = 196 * u, x1 = W - 22 * u, rh = 20 * u, y0 = 44 * u
+  text(ctx, tr("restricted"), FUT(true, 8.6 * u), 8.6 * u, pal.acc, 1, x0, 23 * u, "left", 120 * u)
+  textR(ctx, `${LK} / 5`, FUT(true, 8.6 * u), 8.6 * u, pal.name, 1, x1, 23 * u, 60 * u)
+  text(ctx, tr(`${st} chaos · ${LK > 1 ? `tiers 1–${LK}` : "tier 1"} locked`), FUT(false, 4.9 * u), 4.9 * u, SILVER, 0.62, x0, 33 * u, "left", 140 * u)
+  for (let i = 0; i < LK; i++) {
+    const y = y0 + i * rh
+    fillPath(ctx, rrPath(x0 - 4 * u, y - 8 * u, x1 - x0 + 8 * u, 16 * u, 8 * u), pal.glow, 0.13)
+    strokeP(ctx, rrPath(x0 - 4 * u, y - 8 * u, x1 - x0 + 8 * u, 16 * u, 8 * u), pal.acc, 0.4, 0.6 * u)
+    dot(ctx, x0 + 5 * u, y, 7 * u, pal.glow, 0.18); lockIcon(ctx, x0 + 5 * u, y, 5.6 * u, pal.name, 1, false)
+    text(ctx, CHAOS_TIERS[i], FUT(true, 8.4 * u), 8.4 * u, pal.name, 1, x0 + 15 * u, y + 0.4 * u, "left", 130 * u)
+    textR(ctx, tr(`t${i + 1}`), FUT(true, 4.8 * u), 4.8 * u, pal.acc, 0.85, x1, y + 0.4 * u, 20 * u)
+  }
+  if (LK < 5) {                                                         // the tiers still free, faint, one per line
+    let y = y0 + LK * rh - 1 * u
+    text(ctx, tr("still free"), FUT(false, 4.4 * u), 4.4 * u, SILVER, 0.42, x0, y, "left", 80 * u)
+    for (let i = LK; i < 5 && (y += 10.5 * u) < 143 * u; i++) {
+      lockIcon(ctx, x0 + 5 * u, y, 3.8 * u, SILVER, 0.3, true)
+      text(ctx, CHAOS_TIERS[i], FUT(false, 6.2 * u), 6.2 * u, SILVER, 0.42, x0 + 15 * u, y + 0.3 * u, "left", 130 * u)
+    }
+  }
+  seg(ctx, x0, 148 * u, x1, 148 * u, "#FFFFFF", 0.07, 0.5)
+  quoteLine(ctx, x0, x1, 156 * u, u, pal.name, 0.82, pal.acc)
+}
+const headText = (st, LK) => LK ? "CHAOS" : "CLEAR WALL"
+// ---- variant 1 · ladder: tier 5 at the top, tier 1 at the bottom, a red charge climbs the line ----
+function panelLadder(ctx, W, H, u, pal, LK, st) {
+  const x0 = 198 * u, x1 = W - 24 * u, nx = 208 * u
+  text(ctx, tr(headText(st, LK)), FUT(true, 8.6 * u), 8.6 * u, pal.acc, 1, x0, 23 * u, "left", 120 * u)
+  textR(ctx, LK ? `${LK} / 5` : "0 / 5", FUT(true, 8.6 * u), 8.6 * u, LK ? pal.name : SILVER, LK ? 1 : 0.5, x1, 23 * u, 60 * u)
+  text(ctx, tr(LK ? "tiers locked" : "no tiers locked"), FUT(false, 4.9 * u), 4.9 * u, SILVER, 0.5, x0, 33 * u, "left", 120 * u)
+  const ys = [0, 1, 2, 3, 4].map((i) => (136 - i * 21) * u)            // index = tier-1; tier 5 on top (room kept below for the quote)
+  seg(ctx, nx, ys[4], nx, ys[0], SILVER, 0.14, 1 * u)                  // free rail
+  if (LK > 0) {
+    seg(ctx, nx, ys[LK - 1], nx, ys[0], pal.glow, 0.16, 7 * u); seg(ctx, nx, ys[LK - 1], nx, ys[0], pal.acc, 0.9, 1.6 * u)
+  }
+  for (let i = 0; i < 5; i++) {
+    const y = ys[i], on = i < LK
+    if (on) { dot(ctx, nx, y, 12 * u, pal.glow, 0.1); dot(ctx, nx, y, 8.6 * u, pal.glow, 0.2); dot(ctx, nx, y, 6.6 * u, "#16060B", 1); strokeEll(ctx, nx, y, 6.6 * u, pal.acc, 1, 1.1 * u); lockIcon(ctx, nx, y, 6 * u, pal.name, 1, false) }
+    else { dot(ctx, nx, y, 5.4 * u, "#0A0A12", 0.9); strokeEll(ctx, nx, y, 5.4 * u, st === "clear" ? pal.acc : SILVER, st === "clear" ? 0.45 : 0.3, 0.8 * u); lockIcon(ctx, nx, y, 4.6 * u, st === "clear" ? pal.acc : SILVER, st === "clear" ? 0.55 : 0.32, true) }
+    text(ctx, tr(`tier ${i + 1}`), FUT(false, 4.7 * u), 4.7 * u, on ? pal.acc : SILVER, on ? 0.9 : 0.35, 224 * u, y - 5.2 * u, "left", 80 * u)
+    text(ctx, CHAOS_TIERS[i], FUT(false, 8.9 * u), 8.9 * u, on ? pal.name : SILVER, on ? 1 : 0.42, 224 * u, y + 2.6 * u, "left", 130 * u)
+  }
+  seg(ctx, x0, 148 * u, x1, 148 * u, "#FFFFFF", 0.07, 0.5)
+  quoteLine(ctx, x0, x1, 156 * u, u, LK ? pal.name : SILVER, LK ? 0.82 : 0.78, LK ? pal.acc : SILVER)
+}
+function strokeEll(ctx, x, y, r, hex, a, w) { ctx.setStrokeColor(col(hex, a)); ctx.setLineWidth(w); ctx.strokeEllipse(new Rect(x - r, y - r, r * 2, r * 2)) }
+function strip1(ctx, W, H, u, pal, LK, st) {          // small: header + node row
+  const x0 = 14 * u, x1 = W - 14 * u
+  seg(ctx, 18 * u, 140 * u, W - 18 * u, 140 * u, pal.acc, LK ? 0.35 : 0.18, 0.6)
+  text(ctx, tr(headText(st, LK)), FUT(true, 6.6 * u), 6.6 * u, pal.acc, 1, x0, 147 * u, "left", 90 * u)
+  textR(ctx, LK ? `UP TO · ${CHAOS_TIERS[LK - 1]}` : "NO TIERS LOCKED", FUT(false, 5.6 * u), 5.6 * u, LK ? pal.name : SILVER, LK ? 0.95 : 0.5, x1, 147 * u, 110 * u)
+  const xs = [0, 1, 2, 3, 4].map((i) => (24 + i * 30.5) * u), y = 158 * u
+  seg(ctx, xs[0], y, xs[4], y, SILVER, 0.14, 0.9 * u)
+  if (LK > 1) { seg(ctx, xs[0], y, xs[LK - 1], y, pal.glow, 0.18, 6 * u); seg(ctx, xs[0], y, xs[LK - 1], y, pal.acc, 0.9, 1.4 * u) }
+  xs.forEach((x, i) => {
+    if (i < LK) { dot(ctx, x, y, 8.4 * u, pal.glow, 0.16); dot(ctx, x, y, 5.6 * u, "#16060B", 1); strokeEll(ctx, x, y, 5.6 * u, pal.acc, 1, 1 * u); lockIcon(ctx, x, y, 5 * u, pal.name, 1, false) }
+    else { dot(ctx, x, y, 4.8 * u, "#0A0A12", 0.9); strokeEll(ctx, x, y, 4.8 * u, st === "clear" ? pal.acc : SILVER, st === "clear" ? 0.45 : 0.3, 0.7 * u); lockIcon(ctx, x, y, 4 * u, st === "clear" ? pal.acc : SILVER, st === "clear" ? 0.55 : 0.32, true) }
+  })
+}
+// ---- variant 2 · glass cards ----
+function panelCards(ctx, W, H, u, pal, LK, st) {
+  const x0 = 190 * u, x1 = W - 14 * u, cw = x1 - x0, ch = 19 * u, gap = 3.6 * u, y0 = 40 * u
+  text(ctx, tr(headText(st, LK)), FUT(true, 8.6 * u), 8.6 * u, pal.acc, 1, x0 + 2 * u, 23 * u, "left", 120 * u)
+  const chip = LK ? `${LK}/5 LOCKED` : "ALL FREE"
+  strokeP(ctx, rrPath(x1 - 58 * u, 16.5 * u, 58 * u, 13 * u, 6.5 * u), pal.acc, LK ? 0.7 : 0.4, 0.8 * u)
+  fillPath(ctx, rrPath(x1 - 58 * u, 16.5 * u, 58 * u, 13 * u, 6.5 * u), pal.glow, LK ? 0.18 : 0.08)
+  text(ctx, tr(chip), FUT(true, 5.2 * u), 5.2 * u, LK ? pal.name : SILVER, LK ? 1 : 0.6, x1 - 29 * u, 23 * u, "center", 58 * u)
+  for (let i = 0; i < 5; i++) {
+    const y = y0 + i * (ch + gap), on = i < LK, ac = st === "clear" ? pal.acc : SILVER
+    if (on) {
+      glowRR(ctx, x0, y, cw, ch, 7 * u, pal.glow, 0.55, 3.2 * u)
+      fillPath(ctx, rrPath(x0, y, cw, ch, 7 * u), "#1A0509", 0.55); fillPath(ctx, rrPath(x0, y, cw, ch, 7 * u), pal.glow, 0.2)
+      seg(ctx, x0 + 7 * u, y + 0.9 * u, x0 + cw - 7 * u, y + 0.9 * u, "#FFFFFF", 0.16, 0.7 * u)        // glass sheen
+      strokeP(ctx, rrPath(x0, y, cw, ch, 7 * u), pal.acc, 0.85, 0.8 * u)
+      dot(ctx, x0 + 11 * u, y + ch / 2, 6 * u, pal.glow, 0.3); lockIcon(ctx, x0 + 11 * u, y + ch / 2, 6.2 * u, pal.name, 1, false)
+    } else {
+      strokeP(ctx, rrPath(x0, y, cw, ch, 7 * u), ac, st === "clear" ? 0.32 : 0.18, 0.7 * u)
+      lockIcon(ctx, x0 + 11 * u, y + ch / 2, 5.2 * u, ac, st === "clear" ? 0.5 : 0.3, true)
+    }
+    text(ctx, CHAOS_TIERS[i], FUT(false, 8.6 * u), 8.6 * u, on ? pal.name : SILVER, on ? 1 : 0.42, x0 + 23 * u, y + ch / 2 + 0.6 * u, "left", 120 * u)
+    textR(ctx, tr(`t${i + 1}`), FUT(true, 5.2 * u), 5.2 * u, on ? pal.acc : SILVER, on ? 0.95 : 0.3, x0 + cw - 8 * u, y + ch / 2 + 0.4 * u, 24 * u)
+  }
+}
+function strip2(ctx, W, H, u, pal, LK, st) {
+  const x0 = 14 * u, x1 = W - 14 * u
+  text(ctx, tr(headText(st, LK)), FUT(true, 6.6 * u), 6.6 * u, pal.acc, 1, x0, 146 * u, "left", 90 * u)
+  textR(ctx, LK ? `${LK}/5 LOCKED` : "ALL FREE", FUT(true, 5.6 * u), 5.6 * u, LK ? pal.name : SILVER, LK ? 1 : 0.5, x1, 146 * u, 80 * u)
+  const pw = 26 * u, g = 4.5 * u, sx = (W - (5 * pw + 4 * g)) / 2, py = 152 * u, ph = 12 * u
+  for (let i = 0; i < 5; i++) {
+    const x = sx + i * (pw + g), on = i < LK, ac = st === "clear" ? pal.acc : SILVER
+    if (on) { glowRR(ctx, x, py, pw, ph, 6 * u, pal.glow, 0.55, 2.6 * u); fillPath(ctx, rrPath(x, py, pw, ph, 6 * u), "#1A0509", 0.55); fillPath(ctx, rrPath(x, py, pw, ph, 6 * u), pal.glow, 0.22); strokeP(ctx, rrPath(x, py, pw, ph, 6 * u), pal.acc, 0.85, 0.7 * u); lockIcon(ctx, x + 8 * u, py + ph / 2, 5 * u, pal.name, 1, false) }
+    else { strokeP(ctx, rrPath(x, py, pw, ph, 6 * u), ac, st === "clear" ? 0.32 : 0.18, 0.6 * u); lockIcon(ctx, x + 8 * u, py + ph / 2, 4.2 * u, ac, st === "clear" ? 0.5 : 0.3, true) }
+    text(ctx, `${i + 1}`, FUT(true, 6.4 * u), 6.4 * u, on ? pal.name : SILVER, on ? 1 : 0.4, x + 18.5 * u, py + ph / 2 + 0.4 * u, "center", 12 * u)
+  }
+}
+// ---- variant 3 · big count + segmented meter + 2-column name grid ----
+function panelMeter(ctx, W, H, u, pal, LK, st) {
+  const x0 = 196 * u, x1 = W - 16 * u
+  text(ctx, tr(headText(st, LK)), FUT(true, 7.4 * u), 7.4 * u, pal.acc, 1, x0, 22 * u, "left", 120 * u)
+  glowText(ctx, `${LK}`, FUT(false, 40 * u), 40 * u, LK ? pal.name : SILVER, x0, 52 * u, "left", 1.4)
+  text(ctx, "/5", FUT(false, 14 * u), 14 * u, pal.acc, 0.9, x0 + (LK >= 10 ? 46 : 27) * u, 57 * u, "left", 40 * u)
+  text(ctx, tr(LK ? "tiers locked" : "all tiers free"), FUT(false, 5.2 * u), 5.2 * u, SILVER, 0.55, x0 + 66 * u, 46 * u, "left", 90 * u)
+  text(ctx, tr(LK ? `up to tier ${LK}` : "wall is clear"), FUT(false, 5.2 * u), 5.2 * u, pal.acc, 0.85, x0 + 66 * u, 56 * u, "left", 90 * u)
+  const mw = (x1 - x0 - 4 * 3 * u) / 5, my = 74 * u
+  for (let i = 0; i < 5; i++) {
+    const x = x0 + i * (mw + 3 * u), on = i < LK
+    if (on) { glowRR(ctx, x, my, mw, 7 * u, 3.5 * u, pal.glow, 0.7, 3 * u); fillPath(ctx, rrPath(x, my, mw, 7 * u, 3.5 * u), pal.acc, 0.95) }
+    else fillPath(ctx, rrPath(x, my, mw, 7 * u, 3.5 * u), st === "clear" ? pal.acc : SILVER, st === "clear" ? 0.22 : 0.12)
+    text(ctx, `${i + 1}`, FUT(true, 5 * u), 5 * u, on ? pal.name : SILVER, on ? 0.9 : 0.35, x + mw / 2, my + 14 * u, "center", 20 * u)
+  }
+  seg(ctx, x0, 96 * u, x1, 96 * u, pal.acc, 0.25, 0.5)
+  const cols = [x0, x0 + 80 * u], rows = [111, 128, 145]
+  CHAOS_TIERS.forEach((nm, i) => {
+    const x = cols[i % 2], y = rows[Math.floor(i / 2)] * u, on = i < LK, ac = st === "clear" ? pal.acc : SILVER
+    lockIcon(ctx, x + 3.4 * u, y, 5.6 * u, on ? pal.acc : ac, on ? 1 : (st === "clear" ? 0.5 : 0.3), !on)
+    text(ctx, nm, FUT(false, 8.2 * u), 8.2 * u, on ? pal.name : SILVER, on ? 1 : 0.42, x + 10 * u, y + 0.6 * u, "left", 100 * u)
+  })
+}
+function strip3(ctx, W, H, u, pal, LK, st) {
+  const x0 = 14 * u
+  seg(ctx, 18 * u, 140 * u, W - 18 * u, 140 * u, pal.acc, LK ? 0.35 : 0.18, 0.6)
+  glowText(ctx, `${LK}`, FUT(false, 22 * u), 22 * u, LK ? pal.name : SILVER, x0 + 2 * u, 156 * u, "left", 1.2)
+  text(ctx, "/5", FUT(false, 9 * u), 9 * u, pal.acc, 0.9, x0 + 18 * u, 158 * u, "left", 30 * u)
+  text(ctx, tr(headText(st, LK)), FUT(true, 5.8 * u), 5.8 * u, pal.acc, 1, 68 * u, 146 * u, "left", 100 * u)
+  const mx = 68 * u, mw = (W - 14 * u - mx - 4 * 2.6 * u) / 5, my = 150 * u
+  for (let i = 0; i < 5; i++) {
+    const x = mx + i * (mw + 2.6 * u), on = i < LK
+    if (on) { glowRR(ctx, x, my, mw, 5 * u, 2.5 * u, pal.glow, 0.7, 2.4 * u); fillPath(ctx, rrPath(x, my, mw, 5 * u, 2.5 * u), pal.acc, 0.95) }
+    else fillPath(ctx, rrPath(x, my, mw, 5 * u, 2.5 * u), st === "clear" ? pal.acc : SILVER, st === "clear" ? 0.22 : 0.12)
+  }
+  text(ctx, LK ? CHAOS_TIERS[LK - 1].toUpperCase() : "NO TIERS LOCKED", FUT(false, 5.4 * u), 5.4 * u, LK ? pal.name : SILVER, LK ? 0.9 : 0.5, mx, 161 * u, "left", 100 * u)
+}
+
+
+// ---------------- SKY + QUEST (live: clock time, LIVE.quest from trainToday / cookToday) ----------------
+const SKY = () => LIVE.sky
+function skyHour() { const S = SKY(); if (S && S.hour != null) return S.hour; return now.getHours() + now.getMinutes() / 60 }
+function skyDate() { const S = SKY(); return S && S.date ? new Date(S.date) : now }
+function nightP(h) { return h >= 18 ? (h - 18) / 12 : h < 6 ? (h + 6) / 12 : (h < 12 ? 1 : 0) }   // 18:00 → 0 · midnight → 0.5 · 06:00 → 1
+
+const SKYPAL = {      // I = how sinister (0 calm · gold 0.35 · diamond 0.6 · prismatic 1): scales dust lanes, embers, band glow, red stars
+  clear:     { I: 0,    haze: ["#6A4DB8", "#26A69A", "#DCD0FF"], star: ["#FFFFFF", "#F3F5FF", "#FFE9CC", "#D6E2FF"], ember: [], glow: "#7FD6CC", band: 1 },
+  gold:      { I: 0.35, haze: ["#6A4A14", "#B8791E", "#FFE2A8"], star: ["#FFF1D6", "#FFFFFF", "#FFE0A8", "#FFD58A"], ember: ["#FFB347", "#FFD58A"], glow: "#E08A1E", band: 0.85 },
+  diamond:   { I: 0.6,  haze: ["#3A1C9A", "#6A44E8", "#C8B8FF"], star: ["#EFEAFF", "#FFFFFF", "#C9BBFF", "#D6E2FF"], ember: ["#B59CFF", "#E4DAFF", "#8A64FF"], glow: "#7A4DFF", band: 0.95 },
+  prismatic: { I: 1,    haze: ["#7A0618", "#D0182E", "#FF9A90"], star: ["#FFD0C8", "#FFFFFF", "#FFA8A0", "#FF8A7A"], ember: ["#FF5A2A", "#FF8A3A", "#FFD08A"], glow: "#FF1F3A", band: 1.7 },
+}
+const skyPal = () => SKYPAL[(LIVE.chaos && LIVE.chaos.state) || "clear"] || SKYPAL.clear
+const SINISTER = "#FF1426"          // lit stars bleed to this while a chaos lock is active; strength scales with the tier (gold .40 · diamond .69 · prismatic 1)
+const redStar = (c, I, amt) => I > 0 ? mixHex(c, SINISTER, clamp(I * 1.15 * (amt == null ? 1 : amt), 0, 1)) : c
+const ell = (ctx, x, y, rx, ry, hex, a) => { ctx.setFillColor(col(hex, a)); ctx.fillEllipse(new Rect(x - rx, y - ry, rx * 2, ry * 2)) }
+
+// Milky Way (realistic): layered value-noise fields along a diagonal band, built from soft stacked dots (Scriptable has no gradients or pixel ops).
+// warm dusty bulge (gold / rose) fading to cool blue-violet arms · a Great Rift of irregular dust + filaments · faint emission/reflection patches ·
+// thousands of stars with a magnitude power law, colour temperature and clustering. The band slowly turns over the night.
+const MWH = (ix, iy, s) => { let h = Math.imul(ix, 374761393) ^ Math.imul(iy, 668265263) ^ Math.imul(s, 1442695041); h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296 }
+function vnoise(x, y, s) {
+  const ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy, sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy)
+  const a = MWH(ix, iy, s), b = MWH(ix + 1, iy, s), c = MWH(ix, iy + 1, s), d = MWH(ix + 1, iy + 1, s)
+  return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy
+}
+function fbm(x, y, s, o) { let v = 0, a = 0.5, f = 1, n = 0; for (let i = 0; i < o; i++) { v += a * vnoise(x * f, y * f, s + i * 17); n += a; a *= 0.5; f *= 2.03 } return v / n }
+const MWPAL = {      // warm bulge · rose dust-glow · mid arms · cool outer arms
+  clear:     { warm: "#F2C47E", rose: "#D8708C", mid: "#8F7AD0", cool: "#4668BE" },
+  gold:      { warm: "#FFD27A", rose: "#E8A050", mid: "#B8791E", cool: "#7A5418" },
+  diamond:   { warm: "#CDB6FF", rose: "#9A7AF0", mid: "#6A44E8", cool: "#3A22A8" },
+  prismatic: { warm: "#FF9A80", rose: "#E0203A", mid: "#A01020", cool: "#7A0618" },
+}
+const STAR_TEMP = [[0.1, "#D2DCF2"], [0.34, "#E8ECF6"], [0.66, "#FFFFFF"], [0.84, "#FFF0CE"], [0.95, "#FFC890"], [1, "#FF9E7A"]]
+
+// ---- 55 galaxy patterns: every parameter is a golden-ratio fraction of the index, so no two patterns share a tilt, spine curve, width or core position ----
+const GAL_N = 55
+const frac = (x) => x - Math.floor(x)
+function galaxyPattern(k) {
+  k = ((k % GAL_N) + GAL_N) % GAL_N
+  return { k, a: frac(k * 0.6180339887 + 0.07), b: frac(k * 0.4142135624 + 0.31), c: frac(k * 0.7320508076 + 0.52), d: frac(k * 0.2360679775 + 0.11), e: frac(k * 0.6457513111 + 0.83), f: frac(k * 0.3819660113 + 0.43), ox: k * 13.7 + 5.1, oy: k * 7.3 + 2.9 }
+}
+const dayNumber = (d) => Math.floor(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86400000)
+const galaxyIndex = (d) => Math.floor((d || skyDate()).getTime() / 3600000) % GAL_N      // a new pattern every hour (55 h to go round); the band also drifts with the clock, medal stars ride their slots
+// ---- medal stars: coin-like denominations of the total medal count (Gold + Diamond + Prismatic, never chaos / N/A), greedy, merging as medals grow ----
+// 100 = 1 SUPERIOR star + 20 specks · 10 = 1 BIG star + 10 specks · 1 = 1 SMALL star + 5 specks
+const MEDAL_DENOMS = [100, 10, 1]
+const MEDAL_SLOTS = { 100: 9, 10: 9, 1: 9 }             // 9 of each covers 0..999 exactly
+const MEDAL_SPECKS = { 100: 20, 10: 10, 1: 5 }
+function medalCoins(n) {                                // 133 -> {100:1, 10:3, 1:3}; past 999 the superiors stay at 9 (cap) and the tens/ones show the remainder
+  n = Math.max(0, Math.floor(Number(n) || 0))
+  return { 100: Math.min(9, Math.floor(n / 100)), 10: Math.floor((n % 100) / 10), 1: n % 10 }
+}
+function medalTotal(s) {                                // optional medalsTotal key → gold + diamond + prismatic from the Widget tab
+  if (!s) return 0
+  if (s.medalsTotal != null) return s.medalsTotal
+  return (s.gold || 0) + (s.diamond || 0) + (s.prismatic || 0)
+}
+// one medal star, drawn like astrophotography: a soft Gaussian point spread + faint bloom, thin fading 4-point diffraction spikes (big and superior;
+// barely-there on small), no outlines or rings. d = 0 (speck) · 1 (small) · 10 (big) · 100 (superior). Neutral warm white with a whisper of gold;
+// temp (0..1) nudges the colour temperature per star; I = chaos blood-red bleed; pd = dim factor; tw = scintillation (0.75..1)
+const MEDAL_COL = { core: ["#FFFDF8", "#FFF6E6"], halo: ["#FFF1DC", "#FFE4B4"], bloom: ["#FFE6C0", "#F6CF8E"] }
+function psf(ctx, x, y, sg, hex, peak, layers = 8) {        // stacked translucent discs: radii at Gaussian iso-levels, so the summed light falls off like exp(-r²/2σ²)
+  const a = 1 - Math.pow(1 - clamp(peak, 0, 0.99), 1 / layers)
+  for (let k = 1; k <= layers; k++) dot(ctx, x, y, sg * Math.sqrt(-2 * Math.log(k / (layers + 1))), hex, a)
+}
+function spike(ctx, x, y, len, w, hex, a) {                 // a thin diffraction spike pair that fades along its length (layered tapering slivers)
+  for (const [dx, dy] of [[1, 0], [0, 1]]) for (let k = 0; k < 4; k++) {
+    const l = len * (0.35 + 0.22 * k), ww = w * (1 - k * 0.18), p = new Path()
+    p.move(new Point(x - dx * l, y - dy * l)); p.addLine(new Point(x + dy * ww, y + dx * ww))
+    p.addLine(new Point(x + dx * l, y + dy * l)); p.addLine(new Point(x - dy * ww, y - dx * ww)); p.closeSubpath()
+    fillPath(ctx, p, hex, a * (0.5 - k * 0.1))
+  }
+}
+function medalStar(ctx, x, y, u, d, I, pd = 1, tw = 1, temp = 0.5) {
+  const pick = (arr) => mixHex(arr[0], arr[1], temp), K = MEDAL_COL
+  const core = redStar(pick(K.core), I, 0.45), halo = redStar(pick(K.halo), I, 0.9), bloom = redStar(pick(K.bloom), I, 1)
+  if (d === 0) {                                                         // crisp tiny point with a faint halo
+    psf(ctx, x, y, 0.5 * u, halo, 0.28 * pd, 4)
+    dot(ctx, x, y, 0.3 * u, halo, 0.9 * pd); dot(ctx, x, y, 0.18 * u, core, pd)
+    return
+  }
+  const S = { 1: 0.8, 10: 1.35, 100: 2.0 }[d]                            // PSF scale
+  psf(ctx, x, y, 2.6 * u * S, bloom, 0.22 * pd, 10)                                   // wide faint bloom (scattered light)
+  if (I > 0) psf(ctx, x, y, 2.2 * u * S, SINISTER, 0.18 * I * pd, 6)
+  psf(ctx, x, y, 0.95 * u * S, halo, 0.92 * pd, 9)                                    // the seeing disc
+  const sp = { 1: [4, 0.2, 0.32], 10: [10, 0.34, 0.85], 100: [16, 0.42, 0.78] }[d]    // spike length · width · strength (gentle on the superior)
+  spike(ctx, x, y, sp[0] * u * (0.85 + 0.15 * tw), sp[1] * u, halo, sp[2] * tw * pd)
+  psf(ctx, x, y, 0.42 * u * S, core, pd * 0.98, 5)                                   // saturated core
+  dot(ctx, x, y, 0.36 * u * S, "#FFFFFF", pd)
+}
+// a medal star with its loose cluster of specks (fixed offsets per slot, stretched along the band); skip(x, y) drops a speck that would land on UI
+function medalCluster(ctx, x, y, u, d, I, seed, pd = 1, tw = 1, ang = 0, skip = null) {
+  const q = rng(seed), R = { 1: 4.2, 10: 7, 100: 10.5 }[d] * u, ca = Math.cos(ang), sa = Math.sin(ang)
+  for (let i = 0; i < MEDAL_SPECKS[d]; i++) {
+    const a = q() * 6.283, rr = R * (0.35 + 0.65 * Math.sqrt(q())), ex = Math.cos(a) * rr * 1.35, ey = Math.sin(a) * rr * 0.75
+    const sx = x + ex * ca - ey * sa, sy = y + ex * sa + ey * ca, b = 0.55 + 0.45 * q()
+    if (skip && skip(sx, sy)) continue
+    medalStar(ctx, sx, sy, u * (0.8 + 0.5 * q()), 0, I, pd * b, 1, q())
+  }
+  medalStar(ctx, x, y, u, d, I, pd, tw, q())
+}
+const fbmRaw = fbm
+function drawMilkyWay(ctx, W, H, p, pal, s) {
+  const u = H / 170, wide = W > 250
+  const PAT = galaxyPattern(galaxyIndex()), r = rng(4242 + PAT.k * 977)
+  const fbm = (x, y, s, o) => fbmRaw(x + PAT.ox, y + PAT.oy, s, o)           // a different slice of the noise per pattern: other dust lanes, clumps and clusters
+  const kind = (LIVE.chaos && LIVE.chaos.state) || "clear", M = MWPAL[kind] || MWPAL.clear
+  const base = wide ? -30 + 38 * PAT.a : -60 + 52 * PAT.a, ang = (base + (0.5 - p) * 16) * Math.PI / 180
+  const dx = Math.cos(ang), dy = Math.sin(ang), nx = -dy, ny = dx
+  const cx = W * (0.5 + (p - 0.5) * 0.06), cy = H * (wide ? 0.5 : 0.46)
+  const L = Math.hypot(W, H) * 0.62, sig = (wide ? 17 : 19) * u * (0.82 + 0.44 * PAT.e)
+  const wob = (t) => 1 + 0.28 * Math.sin(t / (46 * u)) + 0.12 * Math.sin(t / (17 * u) + 1.3)
+  const t0 = -L * (wide ? 0.4 : 0.34) * (0.55 + 0.9 * PAT.f)                                          // galactic core: where the XP light sits
+  const bulge = (t) => 0.5 + 0.5 * Math.exp(-Math.pow((t - t0) / (L * 0.46), 2))
+  // the spine of the band is an S-curve whose phase drifts slowly through the day (the whole galaxy flows)
+  const hr = skyHour(), amp = (3 + 13 * PAT.b) * u, lam = (40 + 62 * PAT.c) * u, ph = PAT.d * 6.283 + 1.4 * Math.sin(hr * 0.2618)
+  const spine = (t) => amp * (Math.sin(t / lam + ph) + 0.32 * Math.sin(t / (lam * 0.47) + 2 * ph))
+  __BAND = { cx, cy, dx, dy, nx, ny, L, sig, u, wide, t0, spine }
+  const at = (t, off) => { const o = off + spine(t); return [cx + dx * t + nx * o, cy + dy * t + ny * o] }
+  const I = pal.I, band = pal.band
+  // dust: the Great Rift (a lane that wanders along the spine, splitting) + ridged filaments
+  const dustAt = (t, off) => {
+    const s = sig * wob(t)
+    const roff = s * (0.14 * Math.sin(t / (33 * u) + 0.7) + 0.5 * (fbm(t / (70 * u), 0.5, 8, 2) - 0.5) - 0.06)
+    const rw = s * (0.2 + 0.16 * fbm(t / (24 * u), 1.7, 9, 2))
+    const m = smooth(clamp((t + 0.5 * L) / (0.4 * L), 0, 1)) * (1 - smooth(clamp((t - 0.72 * L) / (0.28 * L), 0, 1)))
+    const rift = Math.exp(-Math.pow((off - roff) / rw, 2)) * m * (0.55 + 0.6 * fbm(t / (16 * u), off / (5 * u), 10, 3))
+    const split = Math.exp(-Math.pow((off - roff - s * 0.75) / (rw * 0.55), 2)) * m * clamp(fbm(t / (40 * u), 2.2, 12, 2) * 1.6 - 0.4, 0, 1) * 0.8
+    const rid = 1 - Math.abs(2 * fbm(t / (17 * u), off / (5.5 * u), 11, 4) - 1)
+    const fil = clamp((rid - 0.8) / 0.18, 0, 1) * Math.exp(-Math.pow(off / (s * 1.5), 2)) * 0.75
+    return clamp((rift + split) * 1.05 + fil + 0.3 * I * fil, 0, 1)
+  }
+  // ---- smooth base haze: cool blue-violet arms warming toward the bulge (no noise yet, so the band reads as one continuous river) ----
+  for (let i = 0, n = wide ? 90 : 66; i <= n; i++) {
+    const t = -L + 2 * L * i / n, s = sig * wob(t), b = bulge(t), [x, y] = at(t, 0)
+    const wm = clamp(Math.exp(-Math.pow((t - t0) / (L * 0.5), 2)) * 1.1, 0, 1)
+    ell(ctx, x, y, s * 2.2, s * 1.25, mixHex(M.cool, M.mid, 0.4 + 0.4 * wm), 0.022 * b * band)
+    ell(ctx, x, y, s * 1.4, s * 0.75, mixHex(M.mid, M.rose, wm * 0.7), 0.02 * b * band)
+    ell(ctx, x, y, s * 0.8, s * 0.42, mixHex(M.rose, M.warm, wm), 0.02 * b * band * (0.4 + wm))
+  }
+  for (let i = 0; i < 9; i++) { const [kx, ky] = at(t0, 0); ell(ctx, kx, ky, (46 - i * 4.4) * u, (24 - i * 2.3) * u, i < 5 ? M.rose : M.warm, 0.012 * band * (1 + i * 0.35)) }
+  const st = (wide ? 2.5 : 2.3) * u
+  // ---- glow + dust cells ----
+  for (let t = -L; t <= L; t += st) {
+    const s = sig * wob(t), b = bulge(t), rj = 3.2 * s
+    for (let off = -rj; off <= rj; off += st) {
+      const j1 = MWH(Math.round(t / st), Math.round(off / st), 1), j2 = MWH(Math.round(t / st), Math.round(off / st), 2)
+      const tt = t + (j1 - 0.5) * st * 0.9, oo = off + (j2 - 0.5) * st * 0.9
+      const [x, y] = at(tt, oo)
+      if (x < -6 * u || x > W + 6 * u || y < -6 * u || y > H + 6 * u) continue
+      const g = oo / s, env = Math.exp(-g * g * 0.5)
+      const clump = 0.72 + 0.7 * fbm(tt / (24 * u), oo / (9 * u), 3, 4)             // cloudy, with irregular edges
+      const edge = 0.75 + 0.5 * fbm(tt / (9 * u), oo / (4 * u), 6, 3)
+      let d = env * b * clump * edge
+      const dust = dustAt(tt, oo)
+      d *= 1 - 0.88 * dust
+      const cw = Math.exp(-Math.pow((tt - t0) / (L * 0.22), 2) - Math.pow(oo / (sig * 1.35), 2))     // the bulge itself
+      const bw = Math.exp(-Math.pow((tt - t0) / (L * 0.5), 2)) * 0.55
+      d += cw * 0.9 * (1 - 0.8 * dust)
+      if (d > 0.03) {
+        let c = mixHex(M.cool, M.mid, clamp(0.35 + 0.65 * (1 - Math.abs(g) / 2.2) + 0.25 * (tt < t0 ? 0.3 : -0.1), 0, 1))
+        const rose = clamp((fbm(tt / (50 * u), oo / (20 * u), 5, 3) - 0.46) * 3.4, 0, 1) * (0.3 + bw)
+        c = mixHex(c, M.rose, clamp(rose * 0.7, 0, 0.7))
+        c = mixHex(c, M.warm, clamp(cw * 1.1 + bw * 0.45 * env, 0, 0.92))
+        ell(ctx, x, y, st * 2.6, st * 2.0, c, 0.0135 * d * band)
+        ell(ctx, x, y, st * 1.2, st * 0.95, mixHex(c, "#FFFFFF", 0.18 + 0.3 * cw), 0.026 * d * band * (0.5 + 0.9 * edge))
+      }
+      if (dust > 0.28) ell(ctx, x, y, st * 1.5, st * 1.1, "#02020A", 0.21 * dust * (0.8 + 0.4 * I))
+    }
+  }
+  // ---- faint nebula patches: an emission knot (rose), a reflection wisp (teal / haze) and a blue veil ----
+  const fl = PAT.c < 0.5 ? 1 : -1, sh = (PAT.b - 0.5) * 0.5
+  const NEB = [[-0.58 + sh, 1.05 * fl, 9, M.rose, 0.034], [0.22 + sh, -1.25 * fl, 11, pal.haze[1], 0.026], [-0.05 + sh, 1.55 * fl, 8, M.cool, 0.03], [0.55 + sh, 0.6 * fl, 7, M.rose, 0.022]]
+  NEB.forEach(([tf, of, rad, c, a], k) => {
+    const nq = rng(300 + k + PAT.k * 61)
+    for (let i = 0; i < 20; i++) {
+      const a1 = nq() * 6.283, rr = Math.sqrt(nq()) * rad * u
+      const [x, y] = at(L * tf + Math.cos(a1) * rr * 1.5, sig * of + Math.sin(a1) * rr)
+      const kk = 0.5 + nq()
+      ell(ctx, x, y, rad * 0.5 * u * kk, rad * 0.36 * u * kk, c, a * band * (1 - 0.6 * I * 0))
+    }
+  })
+  // ---- H-alpha emission knots (pink) and a faint teal reflection wisp, patchy rather than round ----
+  const hq = rng(1717 + PAT.k * 131)
+  for (let k = 0, nk = wide ? 6 : 4; k < nk; k++) {
+    const tf = (hq() * 2 - 1) * 0.8, of = (hq() - 0.5) * 2.2, rad = (5 + 7 * hq()) * u, teal = k === nk - 1
+    const hc = teal ? "#3FB9B0" : mixHex("#FF4F7B", "#E2457F", hq())
+    for (let i = 0; i < 26; i++) {
+      const a1 = hq() * 6.283, rr = Math.sqrt(hq()) * rad, tt = L * tf + Math.cos(a1) * rr * 1.6, oo = sig * of + Math.sin(a1) * rr
+      const lumpy = clamp(fbm(tt / (6 * u), oo / (4 * u), 31, 3) * 1.8 - 0.55, 0, 1)
+      if (lumpy <= 0) continue
+      const [x, y] = at(tt, oo), kk = 0.4 + 0.8 * hq()
+      ell(ctx, x, y, rad * 0.32 * kk, rad * 0.22 * kk, hc, (teal ? 0.02 : 0.03) * lumpy * band * (1 - dustAt(tt, oo) * 0.8))
+    }
+  }
+  // ---- thin dark dust filaments layered over the bright clouds (wispy, broken, slightly curved) ----
+  const fq = rng(2323 + PAT.k * 17)
+  for (let k = 0, nf = wide ? 7 : 5; k < nf; k++) {
+    const o0 = (fq() - 0.5) * 1.8, f0 = -0.95 + fq() * 1.2, len = 0.25 + fq() * 0.5, m = 40, cv = (fq() - 0.5) * 0.6
+    for (let j = 0; j <= m; j++) {
+      const f = j / m, t = L * (f0 + len * f), s0 = sig * wob(t), off = (o0 + cv * Math.sin(f * 3.14) + 0.05 * Math.sin(j * 0.9 + k)) * s0
+      const brk = fbm(t / (8 * u), k * 3.1, 41, 2)
+      if (brk < 0.42) continue
+      const [x, y] = at(t, off), w = (0.6 + 1.1 * brk) * u
+      ell(ctx, x, y, w * 2.4, w, "#03030A", 0.07 * (brk - 0.35) * Math.sin(f * 3.14))
+    }
+  }
+  // ---- fine grain: thousands of faint unresolved stars that make the clouds look grainy (tiny rects, one colour per batch = cheap) ----
+  {
+    const gq = rng(9090 + PAT.k * 7), GN = wide ? 9000 : 5200, B = 8, px = Math.max(0.3 * u, 0.34)
+    for (let bi = 0; bi < B; bi++) {
+      const warm = bi % 2, al = 0.1 + 0.07 * (bi >> 1)
+      ctx.setFillColor(col(redStar(warm ? "#FFE6C8" : "#DCE4FF", I, 0.6), al))
+      for (let i = 0; i < GN / B; i++) {
+        const t = (gq() * 2 - 1) * L, g = (gq() + gq() + gq() - 1.5) / 0.5 * 0.8, off = g * sig * wob(t)
+        const env = Math.exp(-g * g * 0.35) * bulge(t)
+        if (gq() > env * (0.55 + 0.6 * fbm(t / (10 * u), off / (5 * u), 51, 3))) continue
+        if (gq() < dustAt(t, off) * 0.9) continue
+        const [x, y] = at(t, off)
+        ctx.fillRect(new Rect(x, y, px, px))
+      }
+    }
+    // a gentle noise texture over the whole sky (sensor grain), very faint
+    ctx.setFillColor(col("#9AA0B8", 0.035))
+    for (let i = 0, n = wide ? 2600 : 1500; i < n; i++) ctx.fillRect(new Rect(gq() * W, gq() * H, px, px))
+  }
+  // ---- stars: magnitude power law · colour temperature · clustering ----
+  const NS = Math.round((wide ? 6500 : 4200)), tint = (k) => { for (const [lim, c] of STAR_TEMP) if (k <= lim) return c; return "#FFFFFF" }
+  const clustered = (t, off) => fbm(t / (14 * u), off / (6 * u), 20, 3)
+  const putStar = (t, off, boost) => {
+    const [x, y] = at(t, off)
+    if (x < 1 || x > W - 1 || y < 1 || y > H - 1) return
+    const s = sig * wob(t), g = off / s, core = Math.exp(-g * g * 0.5) * bulge(t)
+    const dust = dustAt(t, off), k = r()
+    const mag = Math.pow(k, 9)                                                    // few bright, very many faint
+    const rad = (0.15 + mag * 0.62) * u
+    const a = clamp((0.16 + r() * 0.5 + mag * 0.5) * (0.5 + 0.9 * core) * (1 - 0.85 * dust) * boost, 0, 0.97)
+    if (a < 0.04) return
+    let c = tint(r()); if (I > 0) c = redStar(mixHex(c, pal.star[Math.floor(r() * pal.star.length)], 0.55 + 0.3 * I), I, 0.9)
+    if (mag > 0.3) dot(ctx, x, y, rad * 3.2, c, a * 0.09)
+    dot(ctx, x, y, rad, c, a)
+  }
+  for (let i = 0, got = 0; i < NS * 3 && got < NS; i++) {
+    const t = (r() * 2 - 1) * L, g = (r() + r() + r() - 1.5) / 0.5 * (r() < 0.28 ? 1.7 : 0.62), off = g * sig * wob(t)
+    const cl = clustered(t, off)
+    if (r() > 0.4 + 0.8 * cl * cl) continue
+    putStar(t, off, 1); got++
+  }
+  // a few tight open clusters
+  const cq = rng(811 + PAT.k * 29)
+  for (let k = 0; k < (wide ? 5 : 3); k++) {
+    const ct = (cq() * 2 - 1) * L * 0.8, co = (cq() - 0.5) * sig * 2.2
+    for (let i = 0; i < 26; i++) putStar(ct + (cq() + cq() - 1) * 5 * u, co + (cq() + cq() - 1) * 4 * u, 0.9)
+  }
+  // sparse field stars everywhere, with colour temperature
+  for (let i = 0; i < (wide ? 190 : 100); i++) {
+    const x = r() * W, y = r() * H, k = r()
+    let c = tint(r()); if (I > 0) c = redStar(mixHex(c, pal.star[Math.floor(r() * pal.star.length)], 0.6), I, 0.9)
+    dot(ctx, x, y, (0.14 + Math.pow(k, 6) * 0.55) * u, c, 0.12 + r() * 0.5)
+  }
+  // ---- medal stars: every slot (denomination x index) has a fixed spot in band coordinates, worked out for ALL 27 slots in one fixed order,
+  // so a new medal only adds a small star or merges (10 small -> 1 big, 10 big -> 1 superior) and nothing else jumps; they float with the flow
+  {
+    const coins = medalCoins(medalTotal(s))
+    const rcx = 85 * u, rcy = (wide ? 66 : 50) * u, rcr = (wide ? 41 : 32) * u + 3 * u, py = (wide ? 134 : 110) * u
+    const blocked = (x, y, m) => Math.hypot(x - rcx, y - rcy) < rcr + m || (y > py - 16 * u - m && (!wide || x < 166 * u)) || x < 3 * u + m || x > W - 3 * u - m || y < 3 * u + m || y > H - 3 * u - m
+    const SZ = { 100: 12, 10: 8.5, 1: 5.2 }                                // keep-clear radius per star incl. its speck cluster (u)
+    const order = []
+    for (const d of MEDAL_DENOMS) for (let i = 0; i < MEDAL_SLOTS[d]; i++) order.push({ d, i })
+    const spots = []
+    order.forEach((S) => {
+      const q = rng(Math.floor(MWH(S.d * 31 + S.i, 37, 919) * 4294967295))
+      const sz = SZ[S.d] * u
+      let best = null
+      for (let tries = 0; tries < 260; tries++) {
+        const spread = tries < 120 ? 1 : 1.5                                                   // first along the band's heart, then a little wider
+        const t = (q() * 2 - 1) * L * 0.85, g = (q() + q() + q() - 1.5) / 0.5 * 0.55 * spread, off = g * sig * wob(t)
+        const [x, y] = at(t, off)
+        if (blocked(x, y, sz * 0.45) || (wide && x > 182 * u - sz * 0.6)) continue           // stars stay in the open sky left of the quest glass
+        const k = tries < 100 ? 1 : tries < 180 ? 0.8 : 0.6
+        if (spots.some((o) => !o.none && Math.hypot(o.x - x, o.y - y) < (o.sz + sz) * 0.62 * k)) continue
+        best = { t, off, x, y, sz }; break
+      }
+      for (let tries = 0; !best && tries < 400; tries++) {                                    // never drop a star: last resort, anywhere clear on the band
+        const t = (q() * 2 - 1) * L * 0.95, off = (q() * 2 - 1) * sig * 2.2, [x, y] = at(t, off)
+        if (blocked(x, y, sz * 0.25) || (wide && x > 182 * u)) continue
+        if (spots.some((o) => !o.none && Math.hypot(o.x - x, o.y - y) < (o.sz + sz) * 0.3)) continue
+        best = { t, off, x, y, sz }
+      }
+      spots.push({ ...S, q, ...(best || { none: true, sz }) })
+    })
+    const flow = 2 * Math.PI * hr / 24, skip = (x, y) => blocked(x, y, 0.5 * u)
+    // drawn later, on top of the eclipse and the chaos tint (render calls this), so chaos bleeds them blood red but never hides them
+    __STAR_DRAW = () => spots.slice().reverse().forEach((S) => {
+      if (S.none || S.i >= coins[S.d]) return
+      const q = rng(S.d * 7919 + S.i * 104729 + 7), ph0 = q() * 6.283
+      const fa = (0.006 + 0.008 * q()) * L, fo = (0.3 + 0.4 * q()) * u      // a gentle float with the flow, never far from its slot
+      const [x, y] = at(S.t + fa * Math.sin(flow + ph0), S.off + fo * Math.sin(flow * 2 + ph0))
+      medalCluster(ctx, x, y, u * 1.5, S.d, I, S.d * 1013 + S.i * 37 + 5, 1, 0.75 + 0.25 * Math.sin(hr * 3.1 + ph0), Math.atan2(dy, dx), skip)
+    })
+  }
+  // extra dust lanes only when chaos is rising (the eclipse proper is drawn in reasonsBand)
+  const lq = rng(555)
+  for (let i = 0, ex = Math.round(I * 5); i < ex; i++) {
+    const o = (lq() - 0.5) * 0.9, f0 = -0.9 + lq() * 0.8, f1 = -0.2 + lq() * 1.1, k = 0.7 + lq() * 0.5, m = 34
+    for (let j = 0; j <= m; j++) {
+      const t = L * (f0 + (f1 - f0) * j / m), s = sig * wob(t), off = (o + 0.07 * Math.sin(j * 0.55 + i * 2)) * s * 1.6
+      const [x, y] = at(t, off), w = (3.4 + 2.2 * Math.sin(j * 0.31 + i)) * u * k
+      ell(ctx, x, y, w * 1.9, w * 0.8, "#02020A", 0.075 + 0.06 * I)
+    }
+  }
+  // ominous glow along the spine of the band (chaos only)
+  if (I > 0) for (let i = 0, n = wide ? 86 : 64; i <= n; i++) {
+    const t = -L + 2 * L * i / n, s = sig * wob(t), b = bulge(t), [x, y] = at(t, 0)
+    ell(ctx, x, y, s * 1.6, s * 0.2, pal.glow, 0.028 * I * b); ell(ctx, x, y, s * 1.0, s * 0.09, pal.haze[2], 0.02 * I * b)
+  }
+  // faint ember specks drifting around the band (chaos only)
+  if (pal.ember.length) {
+    const eq = rng(909)
+    for (let i = 0, ne = Math.round((wide ? 60 : 34) * I); i < ne; i++) {
+      const t = (eq() * 2 - 1) * L, off = (eq() - 0.5) * sig * 3.2, [x, y] = at(t, off)
+      if (x < 2 || x > W - 2 || y < 2 || y > H - 2) continue
+      const c = pal.ember[Math.floor(eq() * pal.ember.length)], k = 0.5 + eq()
+      dot(ctx, x, y, 2.6 * k * u, c, 0.05 * I); dot(ctx, x, y, (0.3 + 0.3 * k) * u, c, 0.5 + 0.4 * eq())
+    }
+  }
+  // a few brighter pinpoints + twinkles (each a fixed spot; brightness drifts with the clock)
+  const q = rng(77), h = skyHour(), nt = wide ? 9 : 5
+  for (let i = 0; i < nt; i++) {
+    const x = (0.04 + q() * 0.92) * W, y = (0.05 + q() * 0.9) * H, k = q()
+    const a = 0.3 + 0.6 * Math.abs(Math.sin(h * 5.1 + i * 1.7)), tt = pal.star[i % pal.star.length]
+    dot(ctx, x, y, 2.2 * u, tt, 0.05 * a); dot(ctx, x, y, 0.5 * u, tt, 0.35 + 0.4 * a)          // plain pinpoints: 4-point stars are reserved for streak stars
+  }
+}
+
+// ============ MILKY WAY WITH A REASON (live: LIVE.reason = XP progress + cleansedMedals) ============
+// Widget-tab keys: xpIn / xpNeed light the galactic core; cleansedMedals = permanent gold stars; chaosState / chaosCover drive the eclipse.
+const REASON = () => LIVE.reason
+const goldHue = "#FFD774"
+function bandAt(t, off) { const B = __BAND, o = off + B.spine(t); return [B.cx + B.dx * t + B.nx * o, B.cy + B.dy * t + B.ny * o] }
+function reasonZones(W, H, x, y, pad) {            // true where text/ring/glass live: nothing decorative goes there
+  const u = H / 170, wide = W > 250
+  const rc = wide ? [85, 66, 41] : [85, 50, 32]
+  if (Math.hypot(x - rc[0] * u, y - rc[1] * u) < (rc[2] + 5) * u + pad) return true
+  if (wide && x > 180 * u - pad) return true
+  const py = wide ? 134 : 110; if (y > py * u - pad && x < (wide ? 160 : 166) * u + pad) return true
+  if (!wide && y > 110 * u - pad) return true
+  return false
+}
+function reasonsBand(ctx, W, H, pal) {           // behind everything: galactic core, creeping eclipse, cleansed gold stars
+  const R = REASON(), B = __BAND, u = B.u, c = pal.I, wide = B.wide
+  // XP lights the galactic core (the bright bulge at the band's lower-left)
+  const t0 = B.t0, [kx, ky] = bandAt(t0, 0), g = (0.35 + 0.95 * R.xp) * (1 - 0.82 * Math.min(1, c))
+  for (let i = 0; i < 9; i++) dot(ctx, kx, ky, (34 - i * 3.3) * u, i < 5 ? "#FFE2B0" : "#FFF3D6", 0.011 * g * (1 + i * 0.5))
+  dot(ctx, kx, ky, 2.4 * u, "#FFF8E8", 0.5 * g)
+  // creeping eclipse: dust spreads from the far end of the band toward the core, with a faint blood-red leading edge
+  if (c > 0) {
+    const reach = 0.35 + 1.25 * c
+    for (let j = 0; j <= 46; j++) {
+      const f = j / 46, t = B.L * (1 - f * reach), off = Math.sin(j * 0.7) * B.sig * 0.5, [x, y] = bandAt(t, off)
+      const w = (7 + 5 * Math.sin(j * 0.9)) * u * (0.6 + c * 0.7)
+      ell(ctx, x, y, w * 2.1, w, "#010106", (0.12 + 0.2 * c) * (1 - f * 0.4))
+    }
+    const [ex, ey] = bandAt(B.L * (1 - reach), 0)
+    dot(ctx, ex, ey, 14 * u, pal.glow, 0.05 * c)
+  }
+  // cleansed medals: permanent gold stars sitting on the band, in clear spots
+  let placed = 0
+  for (const [tf, of] of [[-0.62, -0.7], [-0.15, 0.95], [0.34, -0.8], [-0.86, 0.5], [0.62, 0.7], [0.12, -1.0], [0.82, -0.4], [-0.4, 0.8], [0.52, -0.2], [-0.72, -0.2]]) {
+    if (placed >= R.cleansed) break
+    const [x, y] = bandAt(B.L * tf, B.sig * of)
+    if (x < 6 * u || x > W - 6 * u || y < 6 * u || y > H - 6 * u || reasonZones(W, H, x, y, 3 * u)) continue
+    const MG = redStar(goldHue, c, 0.55), MT = redStar("#FFE08A", c, 0.55); for (let q = 0; q < 5; q++) dot(ctx, x, y, (9 - q * 1.4) * u, MG, 0.035 + q * 0.012); strokeEll(ctx, x, y, 3.3 * u, MG, 0.5, 0.4 * u); twinkle(ctx, x, y, 6.4 * u, 1, MT); dot(ctx, x, y, 1.5 * u, redStar("#FFFFFF", c, 0.4), 1); placed++
+  }
+}
+// subtle dark pools behind the ring and the text so they stay the brightest thing on the widget
+function skyVignette(ctx, W, H) {
+  const u = H / 170, wide = W > 250
+  const pools = wide ? [[85, 74, 78, 82, 0.05], [278, 86, 96, 80, 0.045]] : [[85, 62, 66, 66, 0.05], [85, 150, 90, 38, 0.045]]
+  for (const [px, py, rx, ry, a] of pools) for (let i = 0; i < 9; i++) ell(ctx, px * u, py * u, rx * u * (1 - i * 0.09), ry * u * (1 - i * 0.09), "#000000", a)
+  const cx = wide ? 85 * u : W / 2, cy = (wide ? 66 : 50) * u, R = (wide ? 41 : 32) * u
+  dot(ctx, cx, cy, R - 4 * u, "#04040A", 0.45)                               // calm centre for the XP number
+  const VR = Math.hypot(W, H) * 0.42                                          // natural lens vignette: corners fall off softly
+  for (const [vx, vy] of [[0, 0], [W, 0], [0, H], [W, H]]) for (let i = 0; i < 8; i++) dot(ctx, vx, vy, VR * (1 - i * 0.1), "#000000", 0.03)
+}
+
+// ---- quest icons (vector, centred on x,y; s ≈ width) ----
+function iconTrain(ctx, x, y, s, hex, a) {
+  seg(ctx, x - s * 0.5, y, x + s * 0.5, y, hex, a, s * 0.14)
+  for (const sd of [-1, 1]) {
+    fillPath(ctx, rrPath(x + sd * s * 0.5 - s * 0.09, y - s * 0.3, s * 0.18, s * 0.6, s * 0.06), hex, a)
+    fillPath(ctx, rrPath(x + sd * s * 0.34 - s * 0.07, y - s * 0.22, s * 0.14, s * 0.44, s * 0.05), hex, a * 0.85)
+  }
+}
+function iconCook(ctx, x, y, s, hex, a) {
+  fillPath(ctx, rrPath(x - s * 0.42, y - s * 0.02, s * 0.84, s * 0.46, s * 0.12), hex, a)
+  seg(ctx, x - s * 0.5, y - s * 0.06, x + s * 0.5, y - s * 0.06, hex, a, s * 0.12)
+  seg(ctx, x - s * 0.42, y + s * 0.08, x - s * 0.58, y + s * 0.08, hex, a, s * 0.1); seg(ctx, x + s * 0.42, y + s * 0.08, x + s * 0.58, y + s * 0.08, hex, a, s * 0.1)
+  for (const k of [-1, 1]) {                                                // steam
+    const p = new Path(); p.move(P_(x + k * s * 0.14, y - s * 0.16)); p.addQuadCurve(P_(x + k * s * 0.14, y - s * 0.52), P_(x + k * s * 0.32, y - s * 0.34))
+    strokeP(ctx, p, hex, a * 0.7, s * 0.07)
+  }
+}
+function iconBadge(ctx, x, y, s, hex, a) {
+  for (const k of [-1, 1]) {
+    const p = new Path(); p.move(P_(x + k * s * 0.06, y + s * 0.08)); p.addLine(P_(x + k * s * 0.34, y + s * 0.5)); p.addLine(P_(x + k * s * 0.12, y + s * 0.42)); p.addLine(P_(x - k * s * 0.02, y + s * 0.5)); p.closeSubpath()
+    fillPath(ctx, p, hex, a * 0.75)
+  }
+  dot(ctx, x, y - s * 0.08, s * 0.36, hex, a)
+  dot(ctx, x, y - s * 0.08, s * 0.22, "#0A0A12", a * 0.45)
+  dot(ctx, x, y - s * 0.08, s * 0.1, hex, a)
+}
+const QPAL = (n) => n === 2 ? { acc: "#F2D58F", glow: "#E9B84A", name: "#FFF3D2", done: "#F2D58F" } : { acc: "#7FD6CC", glow: "#2BB8A8", name: "#E6F7F5", done: "#7FD6CC" }
+const questState = () => { const q = LIVE.quest || {}; const a = [!!q.train, !!q.cook]; return { a, n: a.filter(Boolean).length } }
+function tick(ctx, x, y, s, hex, a, w) {
+  seg(ctx, x - s * 0.5, y + s * 0.02, x - s * 0.12, y + s * 0.4, hex, a, w); seg(ctx, x - s * 0.12, y + s * 0.4, x + s * 0.55, y - s * 0.4, hex, a, w)
+}
+// ---- quest icons: crisp vector dumbbell (Train) and lidded pot with steam (Cook). Lit = glowing + highlight, unlit = dim outline ----
+function qiShape(ctx, p, c, lit, s, hi) {
+  if (lit) { fillPath(ctx, p, c, 0.96); if (hi) fillPath(ctx, hi, "#FFFFFF", 0.33) }
+  else { fillPath(ctx, p, SILVER, 0.07); strokeP(ctx, p, SILVER, 0.5, Math.max(0.6, s * 0.045)) }
+}
+function iconTrainQ(ctx, x, y, s, lit, pal) {
+  const c = lit ? pal.acc : SILVER
+  if (lit) { dot(ctx, x, y, s * 0.78, pal.glow, 0.07); dot(ctx, x, y, s * 0.55, pal.glow, 0.13) }
+  qiShape(ctx, rrPath(x - s * 0.5, y - s * 0.045, s, s * 0.09, s * 0.04), c, lit, s)                  // bar
+  qiShape(ctx, rrPath(x - s * 0.13, y - s * 0.075, s * 0.26, s * 0.15, s * 0.05), c, lit, s)          // grip
+  for (const sd of [-1, 1]) {
+    const pl = (cxo, w, h, rd) => rrPath(x + sd * s * cxo - w / 2, y - h / 2, w, h, rd)
+    qiShape(ctx, pl(0.24, s * 0.14, s * 0.66, s * 0.045), c, lit, s, rrPath(x + sd * s * 0.24 - s * 0.055, y - s * 0.31, s * 0.035, s * 0.56, s * 0.02))
+    qiShape(ctx, pl(0.375, s * 0.1, s * 0.46, s * 0.04), c, lit, s, rrPath(x + sd * s * 0.375 - s * 0.036, y - s * 0.21, s * 0.026, s * 0.36, s * 0.012))
+    qiShape(ctx, pl(0.47, s * 0.06, s * 0.2, s * 0.025), c, lit, s)
+  }
+}
+function iconCookQ(ctx, x, y0, s, lit, pal) {
+  const c = lit ? pal.acc : SILVER, y = y0 + s * 0.14
+  if (lit) { dot(ctx, x, y - s * 0.05, s * 0.8, pal.glow, 0.07); dot(ctx, x, y - s * 0.05, s * 0.55, pal.glow, 0.13) }
+  for (const [dx, ph] of [[-0.17, 0], [0.01, 1.6], [0.19, 3.1]]) {                                 // steam wisps
+    const q = new Path(), sx = x + dx * s, by = y - s * 0.36
+    q.move(P_(sx, by)); q.addCurve(P_(sx + (ph > 2 ? -1 : 1) * s * 0.02, by - s * 0.3), P_(sx + s * 0.1, by - s * 0.1), P_(sx - s * 0.02, by - s * 0.24))
+    strokeP(ctx, q, lit ? pal.name : SILVER, lit ? 0.62 : 0.32, Math.max(0.6, s * 0.05))
+  }
+  const dome = new Path(); dome.move(P_(x - s * 0.3, y - s * 0.12)); dome.addCurve(P_(x + s * 0.3, y - s * 0.12), P_(x - s * 0.26, y - s * 0.36), P_(x + s * 0.26, y - s * 0.36)); dome.closeSubpath()
+  qiShape(ctx, dome, c, lit, s, rrPath(x - s * 0.18, y - s * 0.27, s * 0.12, s * 0.035, s * 0.015))   // lid
+  if (lit) dot(ctx, x, y - s * 0.325, s * 0.045, "#FFFFFF", 0.7); else dot(ctx, x, y - s * 0.325, s * 0.04, SILVER, 0.5)  // knob
+  qiShape(ctx, rrPath(x - s * 0.37, y - s * 0.13, s * 0.74, s * 0.075, s * 0.03), c, lit, s)          // rim
+  const body = new Path(); body.move(P_(x - s * 0.33, y - s * 0.055)); body.addLine(P_(x + s * 0.33, y - s * 0.055)); body.addLine(P_(x + s * 0.31, y + s * 0.24))
+  body.addQuadCurve(P_(x + s * 0.27, y + s * 0.34), P_(x + s * 0.31, y + s * 0.34)); body.addLine(P_(x - s * 0.27, y + s * 0.34)); body.addQuadCurve(P_(x - s * 0.31, y + s * 0.24), P_(x - s * 0.31, y + s * 0.34)); body.closeSubpath()
+  qiShape(ctx, body, c, lit, s, rrPath(x - s * 0.26, y + s * 0.0, s * 0.055, s * 0.28, s * 0.025))
+  for (const sd of [-1, 1]) qiShape(ctx, rrPath(sd < 0 ? x - s * 0.5 : x + s * 0.33, y + s * 0.02, s * 0.17, s * 0.07, s * 0.03), c, lit, s)   // handles
+}
+const questIcon = (ctx, kind, x, y, s, lit, pal) => (kind === "train" ? iconTrainQ : iconCookQ)(ctx, x, y, s, lit, pal)
+// medium side panel when no chaos locks: two-row "Today's quest" inside the glass card; the flames match the streak flames under the ring
+const QUEST_ROWS = [["workout", "Train", "train", "logged", "not yet"], ["home cook", "Cook", "cook", "cooked", "not yet"]]
+const QUOTES = [
+  "Start small. Start today.",
+  "One more rep beats one more excuse.",
+  "Progress loves a steady hand.",
+  "You are one session from a better mood.",
+  "Show up first. Motivation follows.",
+  "Today's effort is tomorrow's strength.",
+  "Be the person your future self thanks.",
+  "Small wins stack into big change.",
+  "The hardest part is lacing up.",
+  "Do it tired. Do it anyway.",
+  "Every streak began with day one.",
+  "Momentum is built, not found.",
+  "Keep the promise you made to yourself.",
+  "Make today count, even a little.",
+  "Slow progress is still progress.",
+  "You don't need perfect, just next.",
+  "Your only rival is yesterday's you.",
+  "Move now, feel proud later.",
+  "Comfort is quiet. Growth is loud.",
+  "Another day, another chance to rise.",
+  "Push a little past easy.",
+  "Believe it, then earn it.",
+  "Great things come in daily doses.",
+  "The work will not do itself.",
+  "Aim higher than your excuses.",
+  "Today is a clean page. Write on it.",
+  "Begin before you feel ready.",
+  "Strong is a decision, made daily.",
+  "Go the extra mile. It's less crowded.",
+  "Keep going. The view improves.",
+  "You've survived worse than a workout.",
+  "Turn the spark into a flame.",
+  "Win the morning, shape the day.",
+  "Effort never goes to waste.",
+  "Chase the version of you who finished.",
+  "Be stubborn about your goals.",
+  "Let the sweat tell the story.",
+  "Your body hears what your mind says.",
+  "Keep climbing, one step at a time.",
+  "Dream big, act now.",
+  "Don't wait for a sign. This is it.",
+  "Make it happen, not just wish.",
+  "Hard now, easy later.",
+  "The only bad workout is the skipped one.",
+  "Build the life you keep imagining.",
+  "Be relentless about small things.",
+  "Quit quitting.",
+  "Doubt dies when you take action.",
+  "You are stronger than this moment.",
+  "Reach for the next small milestone.",
+  "Earn your rest.",
+  "Courage is taking the first step.",
+  "Light the fire. Keep it burning.",
+  "Today, outwork your doubts.",
+  "Rise with purpose.",
+  "Keep your eyes on the climb.",
+  "Grit turns plans into proof.",
+  "You have done hard things before.",
+  "Take the step you've been avoiding.",
+  "Make future you proud.",
+  "Effort now, freedom later.",
+  "The comeback starts with showing up.",
+  "Fuel the fire, don't fear it.",
+  "Be proud of every attempt.",
+  "Let your habits do the heavy lifting.",
+  "Fortune favours the consistent.",
+  "No shortcuts, only stairs.",
+  "Run your own race.",
+  "Do something today you'll be proud of.",
+  "Make a move. Any move.",
+  "Dare to be a little better today.",
+  "Stay hungry for growth.",
+  "Be unstoppable in small ways.",
+  "Every rep is a vote for who you become.",
+  "Lift the bar, lift the mood.",
+  "Champions repeat the basics.",
+  "A little each day goes a long way.",
+  "Raise your standards, then meet them.",
+  "Trust the process.",
+  "Sweat now, shine later.",
+  "Stay in the game.",
+  "The best project is you.",
+  "Rewrite your limits.",
+  "Your streak is your story.",
+  "Dig deep. There's more in you.",
+  "Success is a pile of ordinary days.",
+  "Prove yourself right.",
+  "Stand taller after every effort.",
+  "Rise, grind, repeat.",
+  "Be bold enough to begin again.",
+  "Make your effort impossible to ignore.",
+  "The finish line loves finishers.",
+  "Today's pain is tomorrow's power.",
+  "Keep the flame small and daily.",
+  "Leave nothing for the what-ifs.",
+  "Clear the doubt, clear the goal.",
+  "You can, so do.",
+  "Nothing changes if nothing moves.",
+  "Be a little braver than yesterday.",
+  "Turn \"someday\" into today.",
+  "Hustle gently, finish proudly.",
+  "Pace yourself. Just don't stop.",
+  "Get after it.",
+  "Aim, move, repeat.",
+  "Every sunrise offers a new start.",
+  "Hold the line. It's working.",
+  "Keep your word to your goals.",
+  "Great days start with one choice.",
+  "Make progress your habit.",
+  "Level up a little today.",
+  "You're closer than you think.",
+  "Fight for the person you're becoming.",
+  "Make this one count.",
+  "Gather your will and go.",
+  "Your body keeps score of kindness.",
+  "Sleep is training too.",
+  "Drink water. Thank yourself later.",
+  "Move daily, think clearer.",
+  "Rest is part of the plan.",
+  "Real food, real energy.",
+  "A walk resets the whole day.",
+  "Strong body, calm mind.",
+  "Health is the quiet kind of wealth.",
+  "Stretch like you mean it.",
+  "Breathe in slowly. Let go slowly.",
+  "Fuel well. Move often.",
+  "Your heart works for you all day.",
+  "Eat the colours of the rainbow.",
+  "Take care of the only body you get.",
+  "Healthy habits are small and daily.",
+  "Sunlight and a stroll. Simple medicine.",
+  "Listen to your body before it shouts.",
+  "Be gentle on days that need it.",
+  "Good sleep, good tomorrow.",
+  "Strong legs carry a strong life.",
+  "Cook it fresh, feel it fast.",
+  "Hydrate, then conquer.",
+  "Energy is earned, not found.",
+  "Treat your body like a good friend.",
+  "Recovery is where strength grows.",
+  "A full plate of vegetables never hurt.",
+  "Posture up, spirits up.",
+  "Your lungs love a brisk walk.",
+  "Wellness is a daily practice.",
+  "Nourish first, indulge second.",
+  "Mind your sleep, mind your mood.",
+  "Health compounds like interest.",
+  "Be fit enough to enjoy your life.",
+  "Eat slowly. Taste everything.",
+  "Take the stairs. Own the day.",
+  "A strong core steadies everything.",
+  "Care for your joints, they carry you.",
+  "Rest well so you can go hard.",
+  "Salad today, strength tomorrow.",
+  "Choose the meal your body will thank.",
+  "Stand up. Your back says hello.",
+  "Keep moving, keep young.",
+  "Feed your brain well.",
+  "Breathe. You are doing fine.",
+  "Cooking at home is self-care.",
+  "Wake your body gently.",
+  "Wellness begins on the plate.",
+  "Healthy is the new rich.",
+  "Go outside. Fresh air is free.",
+  "Fitness is a lifelong friend.",
+  "Be kind to your knees.",
+  "A calm mind heals a tired body.",
+  "Nutrition is a daily love letter.",
+  "Tired body? Try a slow stretch.",
+  "Eat for energy, not for boredom.",
+  "You can't pour from an empty cup.",
+  "A little movement lifts a heavy mood.",
+  "Honour your rest days.",
+  "Strength is built in the kitchen too.",
+  "Walk it off, think it through.",
+  "Protect your sleep like treasure.",
+  "Hydration is the easiest win.",
+  "Try one new healthy meal this week.",
+  "Your future body is listening.",
+  "Let food be your fuel.",
+  "Mobility today, freedom tomorrow.",
+  "Keep your heart happy and busy.",
+  "Healthy is a habit, not a mood.",
+  "Make time for movement. It pays back.",
+  "Feel your feet on the ground.",
+  "A good meal heals more than you think.",
+  "Ease into the morning.",
+  "The best medicine is consistency.",
+  "Choose whole foods most days.",
+  "Self-care is not selfish.",
+  "A strong body is a gift to your family.",
+  "Deep breaths, steady heart.",
+  "Sit less. Stand more.",
+  "Your energy follows your habits.",
+  "Build a body that lasts.",
+  "Fresh fruit is the original snack.",
+  "Be active, be alive.",
+  "Warm up. Cool down. Repeat.",
+  "Look after yourself first.",
+  "Eat well, laugh often.",
+  "Take the long way home.",
+  "Nothing beats feeling strong.",
+  "Feed your body, free your mind.",
+  "Keep a steady, joyful pace.",
+  "A healthy day starts with one good choice.",
+  "Pay attention to how food feels.",
+  "Daily movement is daily medicine.",
+  "Rest, refuel, return.",
+  "Respect your limits and stretch them.",
+  "Your body is your first home.",
+  "A good sweat clears the mind.",
+  "Slow down. Digest. Enjoy.",
+  "Quality sleep is your secret weapon.",
+  "Stay curious about what feels good.",
+  "A homemade meal is health you can taste.",
+  "Look after your gut, it looks after you.",
+  "Be strong enough to play.",
+  "Water first, coffee second.",
+  "Care for your body like a garden.",
+  "Strength grows from gentle consistency.",
+  "Make wellness a ritual, not a chore.",
+  "Today's meal is tomorrow's energy.",
+  "Keep your body in motion.",
+  "A healthy habit is a quiet victory.",
+  "Vitality is built day by day.",
+  "Let your body feel capable.",
+  "Notice the small good things.",
+  "Kindness costs nothing, means everything.",
+  "Say thank you, and mean it.",
+  "Appreciate the people who show up.",
+  "Someone is glad you exist.",
+  "Praise someone today.",
+  "The simple moments are the big ones.",
+  "Look up. The sky is showing off.",
+  "Value your time and others'.",
+  "Appreciate how far you've come.",
+  "Be kind to the one in the mirror.",
+  "A kind word travels far.",
+  "Cherish ordinary mornings.",
+  "Honour the effort, not just the result.",
+  "See the good in someone today.",
+  "Treasure the people at your table.",
+  "Appreciate your own steady work.",
+  "A warm meal shared is a gift.",
+  "Notice who makes your day lighter.",
+  "Say it now. Don't save the kind words.",
+  "Give credit freely.",
+  "Respect the small steps others take.",
+  "Every helper deserves a thank you.",
+  "A smile is a free present.",
+  "Be someone's good news today.",
+  "Enjoy the quiet between things.",
+  "Look closely. Beauty hides in plain sight.",
+  "Appreciate your body for carrying you.",
+  "Thank your hands for all they do.",
+  "Compliment generously.",
+  "Value the teachers in your life.",
+  "Your effort deserves applause.",
+  "Slow down to enjoy the view.",
+  "Kindness is the best habit.",
+  "Notice what's going right.",
+  "Honour the work behind every meal.",
+  "Pause and soak it in.",
+  "Be generous with your praise.",
+  "Love the process, not just the prize.",
+  "Appreciate the ones who believe in you.",
+  "An honest thank you changes a day.",
+  "See the effort in everyone around you.",
+  "Enjoy this, right where you are.",
+  "Let people know they matter.",
+  "Respect every journey, including yours.",
+  "There's beauty in a job well done.",
+  "Appreciate the sound of your own laugh.",
+  "Treat every person like they matter.",
+  "Thank the day for what it brought.",
+  "Be the reason someone smiles.",
+  "Notice the helpers, the quiet ones.",
+  "Hold your loved ones a little longer.",
+  "Love the life you're building.",
+  "A grateful eye finds more to see.",
+  "Celebrate small progress loudly.",
+  "Your presence is a present.",
+  "Cherish the ones who cheer for you.",
+  "Every effort deserves a nod.",
+  "Be present and enjoy the moment.",
+  "Give flowers while they can smell them.",
+  "Appreciate the ride, bumps and all.",
+  "Respect your own pace.",
+  "Honour what you have built.",
+  "Appreciate the hands that fed you.",
+  "Say well done, often.",
+  "Learn to love the ordinary.",
+  "Make someone feel seen.",
+  "A good day is made of kind moments.",
+  "Recognise your own courage.",
+  "Applaud the small beginnings.",
+  "Cherish the calm after effort.",
+  "Thank the people who forgave you.",
+  "Appreciate a quiet cup of tea.",
+  "See the work. Say the thanks.",
+  "Admire how much you've grown.",
+  "Sunsets are free. Watch one.",
+  "Love what's in front of you.",
+  "Smile at the stranger. Why not?",
+  "The best things are rarely things.",
+  "Remember who helped you rise.",
+  "Teach others to feel appreciated.",
+  "Value what money can't buy.",
+  "Look for reasons to be proud.",
+  "Respect your effort today.",
+  "Share the credit, share the joy.",
+  "Take a moment to admire your progress.",
+  "Relish the first sip of the morning.",
+  "Honour your teachers, past and present.",
+  "Be a kind witness to someone's effort.",
+  "Treasure your good days.",
+  "Enjoy the music in everyday life.",
+  "Thank your past self for trying.",
+  "Appreciate rain, it makes things grow.",
+  "Look kindly on your mistakes.",
+  "Notice the care in simple gestures.",
+  "Give someone your full attention.",
+  "Admire the persistence of a small seed.",
+  "Praise sincerely, praise specifically.",
+  "The gift of time is the best gift.",
+  "Remember to enjoy the win.",
+  "Your story deserves a gentle reader.",
+  "Keep a soft heart for every effort.",
+  "Honour the hands that built your day.",
+  "Be thankful for good company.",
+  "See the light in someone's work.",
+  "A little recognition goes a long way.",
+  "Value the journey as much as the goal.",
+  "Savour the good stuff.",
+  "Appreciate the people who make life easier.",
+  "Mark the milestones, however small.",
+  "Notice. Smile. Say thanks.",
+  "Discipline is choosing what matters most.",
+  "Routine beats mood.",
+  "Consistency is quiet power.",
+  "Habits decide the outcome.",
+  "Do it now, not later.",
+  "Be disciplined, be free.",
+  "Doing it daily changes everything.",
+  "Plan the day, then keep the plan.",
+  "Reliability starts with small promises.",
+  "Say no to the easy yes.",
+  "Self-control is strength in disguise.",
+  "Every day, the same good choice.",
+  "Make it a rule. Make it a habit.",
+  "Keep going on the boring days.",
+  "Discipline is remembering what you want.",
+  "Own your schedule.",
+  "The clock rewards the consistent.",
+  "Build the habit, trust the habit.",
+  "Show up even when it's dull.",
+  "You are what you repeatedly do.",
+  "Stay on course.",
+  "Boundaries protect your goals.",
+  "Finish what you start.",
+  "Ritual makes it effortless.",
+  "Prepare today, thrive tomorrow.",
+  "Delay the treat, win the prize.",
+  "Focus is a daily decision.",
+  "Honour your plan.",
+  "Choose long-term over right-now.",
+  "Discipline is self-respect in action.",
+  "Make the hard choice a habit.",
+  "Get up. Get going.",
+  "Be early to your own goals.",
+  "Practice makes steady.",
+  "Simple rules, strong results.",
+  "Do what you said you would.",
+  "Tidy habits, tidy mind.",
+  "Keep the streak alive.",
+  "Treat your goals like appointments.",
+  "Skip the excuse, take the step.",
+  "Structure sets you free.",
+  "Order your day, calm your mind.",
+  "Repeat the basics until they're automatic.",
+  "Discipline is just love for your future.",
+  "Reduce the options, increase the action.",
+  "Start on time, finish with pride.",
+  "A small habit kept beats a big plan broken.",
+  "Stay steady.",
+  "Keep your standards, always.",
+  "Hold the line today.",
+  "Delay distraction.",
+  "Win the first hour.",
+  "One task. Full attention.",
+  "Discipline turns wishes into work.",
+  "Be consistent, not perfect.",
+  "Practise patience.",
+  "Lay one brick, then another.",
+  "Don't negotiate with your alarm.",
+  "The quiet grind pays off.",
+  "Take action before you're comfortable.",
+  "Say yes to your priorities.",
+  "A tidy routine is a gift to yourself.",
+  "Make today's task today's task.",
+  "Your habits write your future.",
+  "Automate the good, avoid the bad.",
+  "Do the hard part first.",
+  "Be ruthless with your time.",
+  "Little by little, day by day.",
+  "Follow through.",
+  "Keep your feet moving.",
+  "Control the controllable.",
+  "Be steady when no one's watching.",
+  "Trust your routine.",
+  "Gain trust by keeping small promises.",
+  "Keep it simple, keep it daily.",
+  "A schedule is a kindness to your future.",
+  "Plan. Act. Review.",
+  "Ignore the noise. Do the work.",
+  "Discipline: the bridge to your goals.",
+  "Stay committed to the plan.",
+  "Same time, same place, same effort.",
+  "Take pride in the routine.",
+  "Follow your own rules.",
+  "Commit, then calmly carry on.",
+  "Honour the early alarm.",
+  "Finish the set. Finish the day.",
+  "Choose effort again.",
+  "Break big goals into small tasks.",
+  "Do less, but do it daily.",
+  "Put your goals first on the list.",
+  "Keep to the schedule.",
+  "Mastery loves repetition.",
+  "Never miss twice.",
+  "Aim for a streak, not a sprint.",
+  "Persist politely.",
+  "Discipline makes motivation optional.",
+  "Respect the process.",
+  "Act on your plan, not your mood.",
+  "A steady pace wins.",
+  "Be firm with yourself, gentle with others.",
+  "Hold yourself to the standard.",
+  "Train your will like a muscle.",
+  "Reward effort, not just results.",
+  "Practice the pause, then proceed.",
+  "Push through the dip.",
+  "Stick with it.",
+  "Stay patient. Stay on task.",
+  "Quiet discipline, loud results.",
+  "Make your best habit your default.",
+  "Keep it going.",
+  "Be thankful for this very breath.",
+  "Gratitude turns enough into plenty.",
+  "Count your blessings, not your problems.",
+  "Thank you for today.",
+  "Grateful hearts see more light.",
+  "Start the day with a thankful thought.",
+  "Thankfulness makes ordinary golden.",
+  "I am grateful for another chance.",
+  "Be grateful for what you can do.",
+  "Thankful for health, thankful for home.",
+  "A grateful mind is a calm mind.",
+  "Find three good things today.",
+  "Gratitude is the quiet kind of joy.",
+  "Say thanks for the little things.",
+  "Be thankful for a body that moves.",
+  "Gratitude makes room for happiness.",
+  "Thankful for hands that cook and lift.",
+  "Be grateful for the challenge, too.",
+  "Today I have enough.",
+  "Thank your lungs, thank your legs.",
+  "Appreciation turns meals into feasts.",
+  "Thankful for the people who love me.",
+  "A grateful morning shapes the day.",
+  "I'm grateful for my progress.",
+  "Thanks for the lessons, even the hard ones.",
+  "Grateful for sunshine and shade.",
+  "Be glad for a fresh start.",
+  "Thankful for every sunrise.",
+  "Gratitude is a muscle. Train it.",
+  "A full heart needs little.",
+  "Pause and give thanks.",
+  "Thankful for food on the table.",
+  "Be grateful you get to try.",
+  "Grateful for the strength I have.",
+  "Thank you, body, for today.",
+  "Feel lucky, feel light.",
+  "Gratitude: the best daily habit.",
+  "Thankful for another day of effort.",
+  "I appreciate what I have.",
+  "Gratitude changes your point of view.",
+  "There is always something to thank.",
+  "Thankful for the quiet moments.",
+  "Grateful for laughter and rest.",
+  "Be grateful for a roof and a bed.",
+  "Thankful for a mind that keeps learning.",
+  "Gratitude softens a hard day.",
+  "I'm thankful to be here.",
+  "Grateful for the road behind me.",
+  "Thank the day, then rest.",
+  "Thankful for second chances.",
+  "Say thank you to your struggles.",
+  "Be grateful for small victories.",
+  "Grateful for friends who cheer me on.",
+  "Today, I choose thankfulness.",
+  "Thankful for the gift of movement.",
+  "I am blessed with another morning.",
+  "Gratitude: seeing what's already here.",
+  "Be thankful for the strength to try.",
+  "Grateful for good food and good health.",
+  "Thanks for being here, you.",
+  "Joy grows where gratitude is planted.",
+  "Thankful for clean water and warm light.",
+  "Grateful for the family I have.",
+  "Be thankful for what's working.",
+  "Gratitude begins with noticing.",
+  "I have so much to be thankful for.",
+  "Thankful for this little win.",
+  "Gratitude is a way of seeing.",
+  "Thank your hands for the work.",
+  "Grateful for every step taken.",
+  "Be thankful for lessons learned.",
+  "Welcome the day with thanks.",
+  "I am grateful for my own effort.",
+  "Thankful for love, near and far.",
+  "Grateful for music, food and friends.",
+  "Gratitude brings peace.",
+  "Thankful for a body that heals.",
+  "Give thanks before you begin.",
+  "Grateful for quiet evenings.",
+  "Today's blessings are everywhere.",
+  "Thankful to have something to work for.",
+  "I'm thankful for my habits.",
+  "Be grateful for the people who taught you.",
+  "Thankful hearts are happy hearts.",
+  "Thank your past self for staying.",
+  "Grateful for tools, time and trust.",
+  "Be thankful you have a tomorrow.",
+  "Thank you for the strength I found.",
+  "Grateful for the kindness I've received.",
+  "Thankful for rain and rainbows.",
+  "Gratitude makes today enough.",
+  "I am thankful for this moment.",
+  "Be grateful for a body you can train.",
+  "Thankful for a home to return to.",
+  "Gratitude is the best seasoning.",
+  "Grateful for gentle mornings.",
+  "Thank the small joys by name.",
+  "Be thankful for good health today.",
+  "Thankful for what I've overcome.",
+  "Today I carry gratitude with me.",
+  "Grateful for every person who helped.",
+  "I am thankful for the chance to grow.",
+  "Thankful for how far I've come.",
+  "Gratitude warms a cold day.",
+  "Grateful for the gift of effort.",
+  "Say thanks and keep going.",
+  "Be glad you showed up.",
+  "Thank the day for being here.",
+]
+// ---- daily quote: 555 short original lines (motivation · health · appreciation · discipline · gratitude), shuffled, once per day ----
+// one seeded permutation (fixed shuffle), indexed by days since 1970: ANY 555 consecutive days show 555 different quotes, and neighbouring days are unrelated
+const QUOTE_ORDER = (() => {
+  const r = rng(0x5EED555), a = QUOTES.map((_, i) => i)
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); const t = a[i]; a[i] = a[j]; a[j] = t }
+  return a
+})()
+function quoteIndex(date) {
+  const n = QUOTES.length, day = Math.floor(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86400000)
+  return QUOTE_ORDER[((day % n) + n) % n]
+}
+const todaysQuote = (date) => QUOTES[quoteIndex(date || skyDate())]
+function quoteLine(ctx, x0, x1, y, u, hex, a, hot) {    // one line, left-aligned after a small star; the text frame is one line tall so a long line can only clip, never wrap
+  const x = x0 + 2.2 * u
+  seg(ctx, x - 2.6 * u, y, x + 2.6 * u, y, hot || SILVER, 0.55, 0.4 * u); seg(ctx, x, y - 2.6 * u, x, y + 2.6 * u, hot || SILVER, 0.55, 0.4 * u); dot(ctx, x, y, 0.8 * u, "#FFFFFF", 0.8)
+  text(ctx, todaysQuote(), FUT(false, 5.2 * u), 5.2 * u, hex, a, x0 + 8 * u, y, "left", x1 - x0 - 8 * u)
+}
+function panelQuest(ctx, W, H, u) {
+  const { a: done, n } = questState(), pal = QPAL(n)
+  const x0 = 198 * u, x1 = W - 24 * u, nx = 208 * u
+  text(ctx, tr("today's quest"), FUT(true, 7.8 * u), 7.8 * u, pal.acc, 1, x0, 24 * u, "left", 130 * u)
+  textR(ctx, tr("done"), FUT(false, 5.2 * u), 5.2 * u, SILVER, 0.6, x1, 24.6 * u, 30 * u)
+  textR(ctx, `${n}/2`, FUT(true, 11 * u), 11 * u, n ? pal.name : SILVER, n ? 1 : 0.55, x1 - 21 * u, 23.6 * u, 40 * u)
+  text(ctx, tr(n === 2 ? "all done · nice work" : n === 0 ? "nothing logged yet" : "keep going"), FUT(false, 4.9 * u), 4.9 * u, SILVER, 0.5, x0, 34.5 * u, "left", 140 * u)
+  seg(ctx, x0, 41 * u, x1, 41 * u, "#FFFFFF", 0.07, 0.5)
+  const ys = [0, 1].map((i) => (70 + i * 33) * u)
+  seg(ctx, nx, ys[0], nx, ys[1], SILVER, 0.14, 1 * u)
+  if (done[0] && done[1]) { seg(ctx, nx, ys[0], nx, ys[1], pal.glow, 0.18, 6 * u); seg(ctx, nx, ys[0], nx, ys[1], pal.acc, 0.85, 1.4 * u) }
+  QUEST_ROWS.forEach(([cap, label, kind, yes, no], i) => {
+    const y = ys[i], d = done[i]
+    if (d) { dot(ctx, nx, y, 11 * u, pal.glow, 0.1); dot(ctx, nx, y, 7.6 * u, pal.glow, 0.2); dot(ctx, nx, y, 6.2 * u, pal.done, 1); tick(ctx, nx, y, 5.6 * u, "#08141A", 1, 1.3 * u) }
+    else { dot(ctx, nx, y, 6 * u, "#0A0A12", 0.9); strokeEll(ctx, nx, y, 6 * u, SILVER, 0.3, 0.9 * u) }
+    questIcon(ctx, kind, 230 * u, y - (kind === "cook" ? 2.5 : 0) * u, 22 * u, d, pal)
+    text(ctx, tr(cap), FUT(false, 4.7 * u), 4.7 * u, d ? pal.acc : SILVER, d ? 0.9 : 0.4, 246 * u, y - 5.4 * u, "left", 70 * u)
+    text(ctx, label, FUT(false, 9.4 * u), 9.4 * u, d ? pal.name : SILVER, d ? 1 : 0.55, 246 * u, y + 2.8 * u, "left", 80 * u)
+    textR(ctx, tr(d ? yes : no), FUT(true, 5.2 * u), 5.2 * u, d ? pal.acc : SILVER, d ? 0.95 : 0.4, x1, y, 56 * u)
+  })
+  const by = 131 * u, bx1 = x1, fx = x0 + (bx1 - x0) * n / 2
+  seg(ctx, x0, by, bx1, by, SILVER, 0.16, 2.2 * u)
+  if (n > 0) { seg(ctx, x0, by, fx, by, pal.glow, 0.22, 6 * u); seg(ctx, x0, by, fx, by, pal.acc, 1, 2.2 * u); dot(ctx, fx, by, 3.4 * u, pal.glow, 0.25); dot(ctx, fx, by, 1.5 * u, "#FFFFFF", 0.9) }
+  seg(ctx, (x0 + bx1) / 2, by - 2.4 * u, (x0 + bx1) / 2, by + 2.4 * u, "#05050B", 0.9, 1.2 * u)
+  seg(ctx, x0, 142 * u, x1, 142 * u, "#FFFFFF", 0.07, 0.5)
+  quoteLine(ctx, x0, x1, 154 * u, u, SILVER, 0.78, pal.acc)
+}
+// small strip when no chaos locks: the divider doubles as the progress bar; chips carry the same flames
+function stripQuest(ctx, W, H, u) {
+  const { a: done, n } = questState(), pal = QPAL(n)
+  const x0 = 16 * u, x1 = W - 16 * u, fx = x0 + (x1 - x0) * n / 2
+  seg(ctx, x0, 140 * u, x1, 140 * u, SILVER, 0.16, 1.2 * u)
+  if (n > 0) { seg(ctx, x0, 140 * u, fx, 140 * u, pal.glow, 0.22, 5 * u); seg(ctx, x0, 140 * u, fx, 140 * u, pal.acc, 1, 1.2 * u); dot(ctx, fx, 140 * u, 2.4 * u, pal.glow, 0.28); dot(ctx, fx, 140 * u, 1 * u, "#FFFFFF", 0.9) }
+  text(ctx, tr("today's quest"), FUT(true, 5.8 * u), 5.8 * u, pal.acc, 1, x0, 146.4 * u, "left", 90 * u)
+  textR(ctx, `${n}/2`, FUT(true, 8 * u), 8 * u, n ? pal.name : SILVER, n ? 1 : 0.55, x1, 146 * u, 30 * u)
+  QUEST_ROWS.forEach(([cap, label, kind], i) => {
+    const x = x0 + 2 * u + i * 66 * u, y = 157.2 * u, d = done[i]
+    questIcon(ctx, kind, x + 6 * u, y - (kind === "cook" ? 1.4 : 0) * u, 12 * u, d, pal)
+    text(ctx, tr(label), FUT(true, 5.8 * u), 5.8 * u, d ? pal.name : SILVER, d ? 1 : 0.5, x + 15 * u, y, "left", 36 * u)
+    if (d) tick(ctx, x + 39 * u, y, 3.2 * u, pal.acc, 1, 0.9 * u)
+  })
 }
 
 // built-in galaxy: drawn once from a fixed seed (no flicker), cached as a PNG in Documents
@@ -806,7 +2310,7 @@ function galaxyImage(W, H) {
   return img
 }
 function drawGalaxy(ctx, W, H) {
-  const r = rng(GALAXY_SEED), u = W / 170
+  const r = rng(GALAXY_SEED), u = H / 170
   ctx.setFillColor(new Color("#030306")); ctx.fillRect(new Rect(0, 0, W, H))
   // very faint violet / indigo haze near the edges, one warm wisp
   const haze = [[0.0, 0.95, "#3A2466"], [1.0, 0.08, "#2E2258"], [0.95, 1.0, "#2A1C4A"], [0.02, 0.12, "#22183C"]]
@@ -826,23 +2330,23 @@ function drawGalaxy(ctx, W, H) {
     const x = (0.06 + r() * 0.88) * W, y = (0.05 + r() * 0.9) * H, c = i % 2 ? "#FFB46A" : "#FFD58A"
     dot(ctx, x, y, 3.4 * u, c, 0.045); dot(ctx, x, y, 1.4 * u, c, 0.12); dot(ctx, x, y, 0.55 * u, c, 0.85)
   }
-  // one tiny faint constellation, top-right
-  const pts = [[0.80, 0.06], [0.87, 0.125], [0.935, 0.095], [0.965, 0.185], [0.895, 0.235]].map(([a, b]) => ({ x: a * W, y: b * H }))
-  for (let i = 1; i < pts.length; i++) seg(ctx, pts[i - 1].x, pts[i - 1].y, pts[i].x, pts[i].y, "#E8ECF7", 0.14, 0.35 * u)
-  pts.forEach((p, i) => { const c = i === 2 ? "#FFD58A" : "#F3F5FF"; dot(ctx, p.x, p.y, 1.6 * u, c, 0.08); dot(ctx, p.x, p.y, 0.55 * u, c, 0.75) })
   // soft vignette: stacked dark discs on each corner (no seams), corners blend into the icon grid
   for (const [vx, vy] of [[0, 0], [W, 0], [0, H], [W, H]])
     for (let i = 0; i < 6; i++) dot(ctx, vx, vy, (70 - i * 10) * u, "#000000", 0.07)
 }
-async function buildWidget() {
+async function buildWidget(fam) {
   const { s, source } = await loadStats()
-  let bg = null, W = 170, H = 170
-  if (BG_MODE === "galaxy") bg = galaxyImage(W, H)
-  else if (fm.fileExists(bgPath("small"))) {
-    bg = fm.readImage(bgPath("small"))
-    const scale = Device.screenScale()
-    W = bg.size.width / scale; H = bg.size.height / scale
-  }
+  const family = (fam || config.widgetFamily) === "small" || !(fam || config.widgetFamily) ? "small" : "medium"   // large falls back to the medium layout
+  const W = family === "medium" ? 360 : 170, H = 170, bg = null      // the galaxy is drawn live each refresh (it drifts with the clock)
+  const CS = String(s.chaosState || "clear").toLowerCase().trim()
+  const state = ["gold", "diamond", "prismatic"].includes(CS) ? CS : "clear"
+  const lock = state === "clear" ? 0 : clamp(Math.round(Number(s.chaosCover) || CPAL[state].lock), 1, 5)
+  const tiers = String(s.chaosTierNames || "").split("|").map((x) => x.trim()).filter(Boolean)
+  if (tiers.length === 5) CHAOS_TIERS = tiers
+  LIVE.chaos = { state, family, variant: 1, lock }
+  LIVE.quest = { train: Number(s.trainToday) > 0, cook: Number(s.cookToday) > 0 }
+  LIVE.reason = { xp: clamp(s.xpNeed > 0 ? s.xpIn / s.xpNeed : 0, 0, 1), cleansed: Math.max(0, Math.floor(Number(s.cleansedMedals) || 0)) }
+  LIVE.sky = {}
   const w = new ListWidget()
   w.setPadding(0, 0, 0, 0)
   w.backgroundImage = render(W, H, bg, s, source)
@@ -851,7 +2355,7 @@ async function buildWidget() {
   return w
 }
 
-// ---------------- background setup (same as the moon widget) ----------------
+// ---------------- background setup ----------------
 const PHONES = {
   "2868": [
     ["iOS 26 · icons with labels", { small: 530, medium: 1132, left: 94, right: 696, top: 297, middle: 933, bottom: 1569 }],
@@ -940,8 +2444,11 @@ async function runInApp() {
   const galaxy = BG_MODE === "galaxy"
   if (!galaxy && !fm.fileExists(bgPath("small"))) await setupBackground()
   else {
-    const i = await choose("Fitness Quest", "", ["Preview", galaxy ? "Redraw galaxy" : "Reset background", "Refresh stats now"])
+    const i = await choose("Fitness Quest", "", ["Preview small", "Preview medium", "Refresh stats now"])
     if (i === null) return
+    if (i === 2 && fm.fileExists(cachePath)) fm.remove(cachePath)
+    if (i === 1) { const wm = await buildWidget("medium"); await wm.presentMedium(); return }
+    const ws = await buildWidget("small"); await ws.presentSmall(); return
     if (i === 1 && galaxy && fm.fileExists(galaxyPath(170, 170))) fm.remove(galaxyPath(170, 170))
     if (i === 1 && !galaxy) await setupBackground()
     if (i === 2 && fm.fileExists(cachePath)) fm.remove(cachePath)
