@@ -1,4 +1,4 @@
-// Mister 14 · Fitness Quest widget · v13.4 (galaxy balanced for 1,555: 16 superior star slots, GAL_GROW_K 280; verse fills the panel under the tiles, fit-to-box 13 → 7pt, up to 5 lines, reference 6pt) · v13.3 (1309 verses: sombre/half-negative ones removed) · v13.2 (verse text 9.5pt max, 6.2pt floor, up to 4 lines, reference 5.4; 1553 standalone verses incl. Joshua 1:9 / Isaiah 40:31 / Micah 6:8) · v13.1 (bigger verse text) · v13 (Bible verses (KJV) replace the quotes, a new one every hour; compact right panel A/B with the streaks folded in; ring-text options) · v12 (icy blue-white Milky Way band; medium: bigger centred XP ring, streak cells moved into the right panel, bigger quote; aligned stat cells: flame + number + label on one axis; real widget size + inset quest panel, clear star tiers; badges + medals build the Milky Way, 8 realistic astrophotography star designs per tier + realistic chaos looks, random-but-stable, twinkle + milestone flare: no medals = dark sky; Train | Cook bar, chaos blood theme)
+// Mister 14 · Fitness Quest widget · v13.5 (borderless TODAY'S QUEST / RESTRICTED panel: frame and glass box removed, soft fading haze behind the text; panelFrame "soft" | "faint" | "glass") · v13.4 (galaxy balanced for 1,555: 16 superior star slots, GAL_GROW_K 280; verse fills the panel under the tiles, fit-to-box 13 → 7pt, up to 5 lines, reference 6pt) · v13.3 (1309 verses: sombre/half-negative ones removed) · v13.2 (verse text 9.5pt max, 6.2pt floor, up to 4 lines, reference 5.4; 1553 standalone verses incl. Joshua 1:9 / Isaiah 40:31 / Micah 6:8) · v13.1 (bigger verse text) · v13 (Bible verses (KJV) replace the quotes, a new one every hour; compact right panel A/B with the streaks folded in; ring-text options) · v12 (icy blue-white Milky Way band; medium: bigger centred XP ring, streak cells moved into the right panel, bigger quote; aligned stat cells: flame + number + label on one axis; real widget size + inset quest panel, clear star tiers; badges + medals build the Milky Way, 8 realistic astrophotography star designs per tier + realistic chaos looks, random-but-stable, twinkle + milestone flare: no medals = dark sky; Train | Cook bar, chaos blood theme)
 // Scriptable · small + medium · built-in galaxy background drawn live (no setup needed)
 //
 // SETUP: run this script once in the Scriptable app, then add a small Scriptable widget to your
@@ -599,6 +599,16 @@ function tierNumber(ctx, str, t, x, y, u) {
 }
 function streakNumber(ctx, v, x, y, u) { const t = flameTier(v); tierNumber(ctx, String(v), t >= 18 ? 8 : t >= 10 ? 6 : t >= 4 ? 3 : 0, x, y, u) }   // number styling: gold from 100 days, glow from 400, bright at 888
 function badgeNumber(ctx, v, x, y, u) { tierNumber(ctx, String(v), medalTier(v), x, y, u) }
+// v13.5 borderless panel: a soft dark haze behind the text only, built from stacked rounded layers so it fades out with no visible edge
+function softBackdrop(ctx, x, y, w, h, u, tint) {
+  const N = 14, pad = 6 * u, step = 1.7 * u
+  for (let k = 0; k < N; k++) {
+    const d = -pad + k * step, xx = x + d, yy = y + d, ww = w - 2 * d, hh = h - 2 * d
+    if (ww <= 0 || hh <= 0) break
+    fillPath(ctx, rrPath(xx, yy, ww, hh, Math.min(ww, hh) * 0.28), "#000000", 0.024)
+    if (tint && k > 3) fillPath(ctx, rrPath(xx, yy, ww, hh, Math.min(ww, hh) * 0.28), tint, 0.006)
+  }
+}
 // frosted-glass panel: faint fill, hairline border, a bright top edge that fades out, soft inner shade at the bottom
 function glass(ctx, x, y, w, h, r, hex, a) {
   fillPath(ctx, rrPath(x, y, w, h, r), "#FFFFFF", 0.03 * (a || 1))
@@ -1146,8 +1156,12 @@ function chaosPanel(ctx, W, H, s) {
   const st = C.state === "cleansed" ? "clear" : C.state, pal = CPAL[st], LK = C.lock != null ? C.lock : pal.lock, v = C.variant || 1
   const u = H / 170
   if (C.family === "medium" && (v === 1 || (!LK && LIVE.quest))) {
-    glass(ctx, 184 * u, 12 * u, W - 196 * u, 154 * u, 12 * u, LK ? pal.acc : "#FFFFFF", 1)
-    if (LK) glowRR(ctx, 184 * u, 12 * u, W - 196 * u, 154 * u, 12 * u, pal.glow, 0.05, 6 * u)
+    if (PANEL_FRAME === "GLASS") {                          // v13.4 look: framed glass box
+      glass(ctx, 184 * u, 12 * u, W - 196 * u, 154 * u, 12 * u, LK ? pal.acc : "#FFFFFF", 1)
+      if (LK) glowRR(ctx, 184 * u, 12 * u, W - 196 * u, 154 * u, 12 * u, pal.glow, 0.05, 6 * u)
+    } else if (PANEL_FRAME === "FAINT") {                   // v13.5 (a): no border, just a very faint fill
+      fillPath(ctx, rrPath(184 * u, 12 * u, W - 196 * u, 154 * u, 12 * u), LK ? pal.glow : "#FFFFFF", LK ? 0.045 : 0.03)
+    } else softBackdrop(ctx, 184 * u, 12 * u, W - 196 * u, 154 * u, u, LK ? pal.glow : null)   // v13.5 (b, default): no frame at all
   }
   if (!LK && LIVE.quest) { (C.family === "medium" ? panelQuest : stripQuest)(ctx, W, H, u); return }
   if (LK && C.family === "medium") { panelRestricted(ctx, W, H, u, pal, LK, st); return }   // chaos: the quest panel becomes the list of what is restricted
@@ -2089,6 +2103,7 @@ function slimBar(ctx, x0, x1, y, u, done, pal) {
     else fillPath(ctx, rrPath(x, y - h / 2, w, h, h / 2), SILVER, 0.14)
   })
 }
+const PANEL_FRAME = String(CFG.panelFrame || "soft").toUpperCase()   // v13.5 right panel frame: "soft" haze (default) · "faint" fill, no border · "glass" = v13.4 framed box
 const PANEL = String(CFG.panel || "B").toUpperCase()                 // v13 compact right panel: "A" tight list · "B" side-by-side tiles
 const QLONG = CFG.questLabels === "long"                             // "Workout" / "Home cook" instead of "Train" / "Cook"
 const qName = (i) => QLONG ? ["Workout", "Home cook"][i] : ["Train", "Cook"][i]
