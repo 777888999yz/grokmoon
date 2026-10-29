@@ -1,4 +1,4 @@
-// Mister 14 · Fitness Quest widget · v11 (aligned stat cells: flame + number + label on one axis; real widget size + inset quest panel, clear star tiers; badges + medals build the Milky Way, 8 realistic astrophotography star designs per tier + realistic chaos looks, random-but-stable, twinkle + milestone flare: no medals = dark sky; Train | Cook bar, chaos blood theme)
+// Mister 14 · Fitness Quest widget · v12 (icy blue-white Milky Way band; medium: bigger centred XP ring, streak cells moved into the right panel, bigger quote; aligned stat cells: flame + number + label on one axis; real widget size + inset quest panel, clear star tiers; badges + medals build the Milky Way, 8 realistic astrophotography star designs per tier + realistic chaos looks, random-but-stable, twinkle + milestone flare: no medals = dark sky; Train | Cook bar, chaos blood theme)
 // Scriptable · small + medium · built-in galaxy background drawn live (no setup needed)
 //
 // SETUP: run this script once in the Scriptable app, then add a small Scriptable widget to your
@@ -616,6 +616,7 @@ function statPanel(ctx, cx, gap, y0, y1, u) {           // one glass bar under t
 //   row 2 = [badge][label]            centred by measured width; the trailing ✓ / dot hangs outside the centring
 // Futura metrics (checked on the phone screenshot): cap height 0.69em, cap centre 0.25em above the text() y line; digits are drawn in
 // fixed 0.56em slots (tabular) so 1-, 2- and 3-digit streaks stay centred. Labels: tracked caps ≈ 0.6em per letter (TRAIN 3.0em, COOK 3.0em).
+const RING_MED = { x: 92, y: 85, r: 52, k: 52 / 41 }          // v12 medium ring: centred in the left area (0-184u), 27% bigger
 const NUM = { fz: 11.5, cap: 0.69, capOff: 0.245, slot: 0.56, ink: 0.47 }
 const LABEL_EM = { TRAIN: 3.0, COOK: 3.0 }
 // measured flame ink (in units of fire()'s h): visible top above the base, and visible width, per flame tier
@@ -631,7 +632,7 @@ function digitsAt(ctx, str, t, x0, yc, u) {                     // draw str left
   })
 }
 const numInkW = (str, u) => ((str.length - 1) * NUM.slot + NUM.ink) * NUM.fz * u
-function statRow(ctx, s, cx, y, gap, u) {
+function statRow(ctx, s, cx, y, gap, u, plain) {
   const yc = y - 1.5 * u, capH = NUM.cap * NUM.fz * u, ly = yc + 11.5 * u   // number cap centre, label cap centre
   const items = [["train", s.exercise, "TRAIN"], ["cook", s.cooking, "COOK"]]
   const q = LIVE.quest ? questState() : null
@@ -641,7 +642,7 @@ function statRow(ctx, s, cx, y, gap, u) {
     const left = x - (fw + gp + numInkW(str, u)) / 2
     fire(ctx, left + fw / 2, yc + vis / 2, h, kind, T, (v * 7 + (kind === "train" ? 1 : 2)) + fireSeed(), v > 0)
     digitsAt(ctx, str, T >= 18 ? 8 : T >= 10 ? 6 : T >= 4 ? 3 : 0, left + fw + gp, yc, u)
-    if (q) questLabel(ctx, kind, label, x, ly, u, q.a[i], QPAL(q.n))
+    if (q && !plain) questLabel(ctx, kind, label, x, ly, u, q.a[i], QPAL(q.n))
     else text(ctx, track(label), FUT(false, 5.2 * u), 5.2 * u, SILVER, 0.5, x, ly + 0.245 * 5.2 * u, "center", 60 * u)
   })
 }
@@ -1014,7 +1015,8 @@ function render(W, H, bg, s, source) {
     text(ctx, `${s.xpNeed - s.xpIn} to ${s.next}`, Font.regularSystemFont(7 * u), 7 * u, SILVER, 0.55, tx + 1, 99 * u, "left", W)
     statRow(ctx, s, tx + 50 * u, 132 * u, 38 * u, u)
   } else { // ring
-    const cx = MED ? 85 * u : W / 2, cy = (CMP ? 50 : 66) * u, R = (CMP ? 32 : 41) * u
+    const uR = MED ? u * RING_MED.k : u                                // v12 medium: ring + centre text scale up into the freed space
+    const cx = MED ? RING_MED.x * u : W / 2, cy = (MED ? RING_MED.y : CMP ? 50 : 66) * u, R = (MED ? RING_MED.r : CMP ? 32 : 41) * u
     drawStars(ctx, W, H, SKY() ? 0 : bg ? 18 : 50, { x: cx, y: cy, R: R * 1.15 })
     let LT = levelTier(s.level); if (CH && CH.state === "prismatic") LT = { ...LT, pal: even("#7A0A16", "#C4202E", "#FF5A4A", "#E8A090", "#9A1020"), tip: "#FFB0A0", text: "#FF9A8A", glow: 0.12 }
     const RED = !!(CH && CH.state === "prismatic"), top = LT === LEVEL_TIERS[LEVEL_TIERS.length - 1], XS = XPS()
@@ -1024,41 +1026,44 @@ function render(W, H, bg, s, source) {
       else text(ctx, track(fmtSavings(s.savings)), FUT(false, 5.6 * u), 5.6 * u, GOLD_SOFT, 0.62, cx, 106 * u, "center", W)
     } else {
     if (XP_RING === "comet") for (let i = 0; i < 36; i++) {                                   // faint tick marks, like a star dial
-      const a = i / 36 * Math.PI * 2, r0 = R + 4.5 * u, r1 = R + (i % 9 === 0 ? 7.5 : 5.8) * u
+      const a = i / 36 * Math.PI * 2, r0 = R + 4.5 * uR, r1 = R + (i % 9 === 0 ? 7.5 : 5.8) * uR
       seg(ctx, cx + Math.cos(a) * r0, cy + Math.sin(a) * r0, cx + Math.cos(a) * r1, cy + Math.sin(a) * r1, i % 9 === 0 ? GOLD : SILVER, i % 9 === 0 ? 0.45 : 0.16, 0.5)
     }
     if (top) {                                                       // max level: gold halo + crystal sparkles
-      arcStroke(ctx, cx, cy, R + 10 * u, Math.PI * 0.72, Math.PI * 2.28, GOLD_SOFT, 0.4, 0.6)   // open at the bottom, clear of "Level N"
+      arcStroke(ctx, cx, cy, R + 10 * uR, Math.PI * 0.72, Math.PI * 2.28, GOLD_SOFT, 0.4, 0.6)   // open at the bottom, clear of "Level N"
     }
-    for (let i = 1; i <= 5; i++) (XP_RING === "comet" ? (r, h, al, w) => arcStroke(ctx, cx, cy, r, 0, Math.PI * 2, h, al, w) : (r, h, al, w) => ringStroke(ctx, cx, cy, r, h, al, w))(R - (2.6 + i * 1.5) * u, "#000000", 0.13 * (1 - i / 6), 1.7 * u)   // soft inner shadow
-    if (XP_RING === "comet") arcStroke(ctx, cx, cy, R + 3.4 * u, 0, Math.PI * 2, "#FFFFFF", 0.07, 0.45)                  // hairline outer ring
+    for (let i = 1; i <= 5; i++) (XP_RING === "comet" ? (r, h, al, w) => arcStroke(ctx, cx, cy, r, 0, Math.PI * 2, h, al, w) : (r, h, al, w) => ringStroke(ctx, cx, cy, r, h, al, w))(R - (2.6 + i * 1.5) * uR, "#000000", 0.13 * (1 - i / 6), 1.7 * uR)   // soft inner shadow
+    if (XP_RING === "comet") arcStroke(ctx, cx, cy, R + 3.4 * uR, 0, Math.PI * 2, "#FFFFFF", 0.07, 0.45)                  // hairline outer ring
     if (XP_RING === "comet") for (let i = 0; i < 60; i++) {                                    // tiny inner tick marks
-      const a = i / 60 * Math.PI * 2, r0 = R - 5.4 * u, r1 = R - (i % 5 ? 6.5 : 7.6) * u
+      const a = i / 60 * Math.PI * 2, r0 = R - 5.4 * uR, r1 = R - (i % 5 ? 6.5 : 7.6) * uR
       seg(ctx, cx + Math.cos(a) * r0, cy + Math.sin(a) * r0, cx + Math.cos(a) * r1, cy + Math.sin(a) * r1, "#FFFFFF", i % 5 ? 0.09 : 0.2, 0.4)
     }
     const a0 = -Math.PI / 2, a1 = a0 + Math.PI * 2 * pct
-    if (XP_RING === "halo") ringHalo(ctx, cx, cy, R, u, pct, RED)
-    else xpOrbit(ctx, cx, cy, R, u, pct, RED, XS)
+    if (XP_RING === "halo") ringHalo(ctx, cx, cy, R, uR, pct, RED)
+    else xpOrbit(ctx, cx, cy, R, uR, pct, RED, XS)
     if (top) {
       const cr = ["#CFE0FA", "#D9CCF5", "#F3F4FA", "#FFE3A3"]
       ;[-60, 0, 35, 145, 180, 240].forEach((deg, i) => {
-        const a = deg * Math.PI / 180, rr = R + 10 * u
-        lozenge(ctx, cx + Math.cos(a) * rr, cy + Math.sin(a) * rr, 1.3 * u, 2.6 * u, cr[i % 4], 0.95)
+        const a = deg * Math.PI / 180, rr = R + 10 * uR
+        lozenge(ctx, cx + Math.cos(a) * rr, cy + Math.sin(a) * rr, 1.3 * uR, 2.6 * uR, cr[i % 4], 0.95)
       })
-      twinkle(ctx, cx - R * 0.95, cy - R * 0.95, 4.5 * u, 0.9); twinkle(ctx, cx + R * 1.0, cy + R * 0.9, 3.5 * u, 0.8)
+      twinkle(ctx, cx - R * 0.95, cy - R * 0.95, 4.5 * uR, 0.9); twinkle(ctx, cx + R * 1.0, cy + R * 0.9, 3.5 * uR, 0.8)
     }
-    if (XS === "planet") { const hr = R + 15 * u, hxx = cx + Math.cos(a1) * hr, hyy = cy + Math.sin(a1) * hr; xpChip(ctx, hxx, hyy, `${Math.round(pct * 100)}%`, u, RED) }
-    xpLabels(ctx, s, cx, cy, u, pct, CMP, RED, LT)
+    if (XS === "planet") { const hr = R + 15 * uR, hxx = cx + Math.cos(a1) * hr, hyy = cy + Math.sin(a1) * hr; xpChip(ctx, hxx, hyy, `${Math.round(pct * 100)}%`, uR, RED) }
+    xpLabels(ctx, s, cx, cy, uR, pct, CMP, RED, LT)
     if (false) {   // v3: the level now sits inside the ring
-      const ly = (CMP ? 97 : 120) * u, nd = String(s.level).length, gw = 22 * u + 4.5 * u + nd * 8.6 * u, lx = cx - gw / 2
-      text(ctx, track("LEVEL"), FUT(false, 6.6 * u), 6.6 * u, LT.text, 0.8, lx, ly + 2.6 * u, "left", 40 * u)
-      glowText(ctx, String(s.level), FUT(true, 14.5 * u), 14.5 * u, LT.text, lx + 26.5 * u + nd * 4.3 * u, ly, "center", top ? 1.4 : 0.8)
+      const ly = (CMP ? 97 : 120) * uR, nd = String(s.level).length, gw = 22 * uR + 4.5 * uR + nd * 8.6 * uR, lx = cx - gw / 2
+      text(ctx, track("LEVEL"), FUT(false, 6.6 * uR), 6.6 * uR, LT.text, 0.8, lx, ly + 2.6 * uR, "left", 40 * uR)
+      glowText(ctx, String(s.level), FUT(true, 14.5 * uR), 14.5 * uR, LT.text, lx + 26.5 * uR + nd * 4.3 * uR, ly, "center", top ? 1.4 : 0.8)
     }
     // v3: no next-rank row; the p.a. rate now sits inside the ring
     }
     const sgap = (MED ? 46 : 50) * u
-    statPanel(ctx, cx, sgap, (CMP ? 112.5 : 137.5) * u, H - 4 * u, u)
-    statRow(ctx, s, cx, (CMP ? (CH.lock ? 123 : LIVE.quest ? 127 : 123) : 147.5) * u, sgap, u)
+    if (MED) LIVE.streaks = s                                        // v12 medium: the streak cells live in the right-hand panel (chaosPanel)
+    else {
+      statPanel(ctx, cx, sgap, (CMP ? 112.5 : 137.5) * u, H - 4 * u, u)
+      statRow(ctx, s, cx, (CMP ? (CH.lock ? 123 : LIVE.quest ? 127 : 123) : 147.5) * u, sgap, u)
+    }
   }
   chaosPanel(ctx, W, H, s)
   statusDot(ctx, W, u, source)
@@ -1150,28 +1155,29 @@ function chaosPanel(ctx, W, H, s) {
 }
 // ---- chaos · medium side panel: "Today's quest" is replaced by the restricted list — only the tiers locked right now, in the blood theme ----
 function panelRestricted(ctx, W, H, u, pal, LK, st) {
-  const x0 = 196 * u, x1 = W - 22 * u, rh = 20 * u, y0 = 44 * u
+  const x0 = 196 * u, x1 = W - 22 * u, rh = 15.5 * u, y0 = 44 * u        // v12: compact rows so the streak cells fit below
   text(ctx, tr("restricted"), FUT(true, 8.6 * u), 8.6 * u, pal.acc, 1, x0, 23 * u, "left", 120 * u)
   textR(ctx, `${LK} / 5`, FUT(true, 8.6 * u), 8.6 * u, pal.name, 1, x1, 23 * u, 60 * u)
   text(ctx, tr(`${st} chaos · ${LK > 1 ? `tiers 1–${LK}` : "tier 1"} locked`), FUT(false, 4.9 * u), 4.9 * u, SILVER, 0.62, x0, 33 * u, "left", 140 * u)
   for (let i = 0; i < LK; i++) {
     const y = y0 + i * rh
-    fillPath(ctx, rrPath(x0 - 4 * u, y - 8 * u, x1 - x0 + 8 * u, 16 * u, 8 * u), pal.glow, 0.13)
-    strokeP(ctx, rrPath(x0 - 4 * u, y - 8 * u, x1 - x0 + 8 * u, 16 * u, 8 * u), pal.acc, 0.4, 0.6 * u)
-    dot(ctx, x0 + 5 * u, y, 7 * u, pal.glow, 0.18); lockIcon(ctx, x0 + 5 * u, y, 5.6 * u, pal.name, 1, false)
-    text(ctx, CHAOS_TIERS[i], FUT(true, 8.4 * u), 8.4 * u, pal.name, 1, x0 + 15 * u, y + 0.4 * u, "left", 130 * u)
+    fillPath(ctx, rrPath(x0 - 4 * u, y - 6.5 * u, x1 - x0 + 8 * u, 13 * u, 6.5 * u), pal.glow, 0.13)
+    strokeP(ctx, rrPath(x0 - 4 * u, y - 6.5 * u, x1 - x0 + 8 * u, 13 * u, 6.5 * u), pal.acc, 0.4, 0.6 * u)
+    dot(ctx, x0 + 5 * u, y, 6 * u, pal.glow, 0.18); lockIcon(ctx, x0 + 5 * u, y, 5 * u, pal.name, 1, false)
+    text(ctx, CHAOS_TIERS[i], FUT(true, 7.6 * u), 7.6 * u, pal.name, 1, x0 + 15 * u, y + 0.4 * u, "left", 130 * u)
     textR(ctx, tr(`t${i + 1}`), FUT(true, 4.8 * u), 4.8 * u, pal.acc, 0.85, x1, y + 0.4 * u, 20 * u)
   }
   if (LK < 5) {                                                         // the tiers still free, faint, one per line
     let y = y0 + LK * rh - 1 * u
     text(ctx, tr("still free"), FUT(false, 4.4 * u), 4.4 * u, SILVER, 0.42, x0, y, "left", 80 * u)
-    for (let i = LK; i < 5 && (y += 10.5 * u) < 143 * u; i++) {
+    for (let i = LK; i < 5 && (y += 9.5 * u) < 110 * u; i++) {
       lockIcon(ctx, x0 + 5 * u, y, 3.8 * u, SILVER, 0.3, true)
       text(ctx, CHAOS_TIERS[i], FUT(false, 6.2 * u), 6.2 * u, SILVER, 0.42, x0 + 15 * u, y + 0.3 * u, "left", 130 * u)
     }
   }
-  seg(ctx, x0, 148 * u, x1, 148 * u, "#FFFFFF", 0.07, 0.5)
-  quoteLine(ctx, x0, x1, 156 * u, u, pal.name, 0.82, pal.acc)
+  panelStreaks(ctx, x0, x1, 126 * u, u)
+  seg(ctx, x0, 144.5 * u, x1, 144.5 * u, "#FFFFFF", 0.07, 0.5)
+  quoteLine(ctx, x0, x1, 155.5 * u, u, pal.name, 0.82, pal.acc)
 }
 const headText = (st, LK) => LK ? "CHAOS" : "CLEAR WALL"
 // ---- variant 1 · ladder: tier 5 at the top, tier 1 at the bottom, a red charge climbs the line ----
@@ -1291,7 +1297,7 @@ function skyDate() { const S = SKY(); return S && S.date ? new Date(S.date) : no
 function nightP(h) { return h >= 18 ? (h - 18) / 12 : h < 6 ? (h + 6) / 12 : (h < 12 ? 1 : 0) }   // 18:00 → 0 · midnight → 0.5 · 06:00 → 1
 
 const SKYPAL = {      // I = how sinister (0 calm · gold 0.35 · diamond 0.6 · prismatic 1): scales dust lanes, embers, band glow, red stars
-  clear:     { I: 0,    haze: ["#6A4DB8", "#26A69A", "#DCD0FF"], star: ["#FFFFFF", "#F3F5FF", "#FFE9CC", "#D6E2FF"], ember: [], glow: "#7FD6CC", band: 1 },
+  clear:     { I: 0,    haze: ["#4A6AA8", "#5E9AB8", "#DCE8FF"], star: ["#FFFFFF", "#F3F5FF", "#FFE9CC", "#D6E2FF"], ember: [], glow: "#7FD6CC", band: 1 },
   gold:      { I: 0.35, haze: ["#6A4A14", "#B8791E", "#FFE2A8"], star: ["#FFF1D6", "#FFFFFF", "#FFE0A8", "#FFD58A"], ember: ["#FFB347", "#FFD58A"], glow: "#E08A1E", band: 0.85 },
   diamond:   { I: 0.6,  haze: ["#3A1C9A", "#6A44E8", "#C8B8FF"], star: ["#EFEAFF", "#FFFFFF", "#C9BBFF", "#D6E2FF"], ember: ["#B59CFF", "#E4DAFF", "#8A64FF"], glow: "#7A4DFF", band: 0.95 },
   prismatic: { I: 1,    haze: ["#7A0618", "#D0182E", "#FF9A90"], star: ["#FFD0C8", "#FFFFFF", "#FFA8A0", "#FF8A7A"], ember: ["#FF5A2A", "#FF8A3A", "#FFD08A"], glow: "#FF1F3A", band: 1.7 },
@@ -1312,7 +1318,7 @@ function vnoise(x, y, s) {
 }
 function fbm(x, y, s, o) { let v = 0, a = 0.5, f = 1, n = 0; for (let i = 0; i < o; i++) { v += a * vnoise(x * f, y * f, s + i * 17); n += a; a *= 0.5; f *= 2.03 } return v / n }
 const MWPAL = {      // warm bulge · rose dust-glow · mid arms · cool outer arms
-  clear:     { warm: "#F2C47E", rose: "#D8708C", mid: "#8F7AD0", cool: "#4668BE" },
+  clear:     { warm: "#EDE6D6", rose: "#C4D4EA", mid: "#94AED6", cool: "#4E74B8" },   // v12: icy blue-white (was gold / rose / violet)
   gold:      { warm: "#FFD27A", rose: "#E8A050", mid: "#B8791E", cool: "#7A5418" },
   diamond:   { warm: "#CDB6FF", rose: "#9A7AF0", mid: "#6A44E8", cool: "#3A22A8" },
   prismatic: { warm: "#FF9A80", rose: "#E0203A", mid: "#A01020", cool: "#7A0618" },
@@ -1566,7 +1572,7 @@ function medalCluster(ctx, x, y, u, d, I, seed, pd = 1, tw = 1, ang = 0, skip = 
   v = v || starVariant(d, 0)
   const B = (c, amt = 0.9) => redStar(c, I, amt), th = q() * 6.283 + rot, ct = Math.cos(th), st = Math.sin(th)
   const P = (fx, fy) => [x + (fx * ct - fy * st) * R, y + (fx * st + fy * ct) * R], tints = v.tints || SPECK_TINTS
-  psf(ctx, x, y, R * 0.85, B(v.band || "#B8B2DC"), 0.05 * pd, 6)                 // unresolved starlight: sits inside the Milky Way band
+  psf(ctx, x, y, R * 0.85, B(v.band || "#B8C6DE"), 0.05 * pd, 6)                 // unresolved starlight: sits inside the Milky Way band
   if (v.glow) psf(ctx, x, y, R * 0.42, B(v.halo), v.glow * pd, 8)                 // a globular's unresolved core
   for (const nb of v.neb || []) { const [nx, ny] = P(nb.at[0], nb.at[1]); nebula(ctx, nx, ny, nb.r * R, B(nb.c[0]), B(nb.c[1]), nb.a * pd, q, nb.ex || 1, th + (nb.ang || 0), nb.n || (d === 100 ? 18 : d === 10 ? 13 : 9), skip) }
   if (v.fx) chaosFx(ctx, x, y, R, u, v, B, q, th, pd, skip, false)
@@ -1633,8 +1639,8 @@ function drawMilkyWay(ctx, W, H, p, pal, s) {
   // ---- THE MEDALS BUILD THE GALAXY: medal slots are placed first (band coords), then every cloud/dust/star-cloud layer is weighted by
   // mask(t, off) = global growth from the medal count + a local wisp of light around each medal star that is actually lit ----
   const coins = medalCoins(medalTotal(s))
-  const rcx = 85 * u, rcy = (wide ? 66 : 50) * u, rcr = (wide ? 41 : 32) * u + 3 * u, py = (wide ? 134 : 110) * u
-  const blocked = (x, y, m) => Math.hypot(x - rcx, y - rcy) < rcr + m || (y > py - 16 * u - m && (!wide || x < 166 * u)) || x < 3 * u + m || x > W - 3 * u - m || y < 3 * u + m || y > H - 3 * u - m
+  const med = C_MED(), rcx = (med ? RING_MED.x : 85) * u, rcy = (med ? RING_MED.y : wide ? 66 : 50) * u, rcr = (med ? RING_MED.r + 4 : wide ? 44 : 35) * u, py = (wide ? 134 : 110) * u
+  const blocked = (x, y, m) => Math.hypot(x - rcx, y - rcy) < rcr + m || (med ? false : y > py - 16 * u - m && (!wide || x < 166 * u)) || x < 3 * u + m || x > W - 3 * u - m || y < 3 * u + m || y > H - 3 * u - m
   const SZ = { 100: 12, 10: 8.5, 1: 5.2 }                                // keep-clear radius per star incl. its speck cluster (u)
   const order = []
   for (const d of MEDAL_DENOMS) for (let i = 0; i < MEDAL_SLOTS[d]; i++) order.push({ d, i })
@@ -1725,7 +1731,7 @@ function drawMilkyWay(ctx, W, H, p, pal, s) {
   const hq = rng(1717 + PAT.k * 131)
   for (let k = 0, nk = wide ? 6 : 4; k < nk; k++) {
     const tf = (hq() * 2 - 1) * 0.8, of = (hq() - 0.5) * 2.2, rad = (5 + 7 * hq()) * u, teal = k === nk - 1
-    const hc = teal ? "#3FB9B0" : mixHex("#FF4F7B", "#E2457F", hq())
+    const hc = teal ? "#3FB9B0" : M === MWPAL.clear ? mixHex("#A8C6EE", "#CFE0F6", hq()) : mixHex("#FF4F7B", "#E2457F", hq())   // v12: icy knots in the normal sky
     for (let i = 0; i < 26; i++) {
       const a1 = hq() * 6.283, rr = Math.sqrt(hq()) * rad, tt = L * tf + Math.cos(a1) * rr * 1.6, oo = sig * of + Math.sin(a1) * rr
       const lumpy = clamp(fbm(tt / (6 * u), oo / (4 * u), 31, 3) * 1.8 - 0.55, 0, 1)
@@ -1900,10 +1906,10 @@ function reasonsBand(ctx, W, H, pal) {           // behind everything: galactic 
 }
 // subtle dark pools behind the ring and the text so they stay the brightest thing on the widget
 function skyVignette(ctx, W, H) {
-  const u = H / 170, wide = W > 250
-  const pools = wide ? [[85, 74, 78, 82, 0.05], [278, 86, 96, 80, 0.045]] : [[85, 62, 66, 66, 0.05], [85, 150, 90, 38, 0.045]]
+  const u = H / 170, wide = W > 250, med = C_MED()
+  const pools = med ? [[RING_MED.x, RING_MED.y, 84, 84, 0.05], [278, 86, 96, 80, 0.045]] : wide ? [[85, 74, 78, 82, 0.05], [278, 86, 96, 80, 0.045]] : [[85, 62, 66, 66, 0.05], [85, 150, 90, 38, 0.045]]
   for (const [px, py, rx, ry, a] of pools) for (let i = 0; i < 9; i++) ell(ctx, px * u, py * u, rx * u * (1 - i * 0.09), ry * u * (1 - i * 0.09), "#000000", a)
-  const cx = wide ? 85 * u : W / 2, cy = (wide ? 66 : 50) * u, R = (wide ? 41 : 32) * u
+  const cx = med ? RING_MED.x * u : wide ? 85 * u : W / 2, cy = (med ? RING_MED.y : wide ? 66 : 50) * u, R = (med ? RING_MED.r : wide ? 41 : 32) * u
   dot(ctx, cx, cy, R - 4 * u, "#04040A", 0.45)                               // calm centre for the XP number
   const VR = Math.hypot(W, H) * 0.42                                          // natural lens vignette: corners fall off softly
   for (const [vx, vy] of [[0, 0], [W, 0], [0, H], [W, H]]) for (let i = 0; i < 8; i++) dot(ctx, vx, vy, VR * (1 - i * 0.1), "#000000", 0.03)
@@ -2549,31 +2555,40 @@ const todaysQuote = (date) => QUOTES[quoteIndex(date || skyDate())]
 function quoteLine(ctx, x0, x1, y, u, hex, a, hot) {    // one line, left-aligned after a small star; the text frame is one line tall so a long line can only clip, never wrap
   const x = x0 + 2.2 * u
   seg(ctx, x - 2.6 * u, y, x + 2.6 * u, y, hot || SILVER, 0.55, 0.4 * u); seg(ctx, x, y - 2.6 * u, x, y + 2.6 * u, hot || SILVER, 0.55, 0.4 * u); dot(ctx, x, y, 0.8 * u, "#FFFFFF", 0.8)
-  text(ctx, todaysQuote(), FUT(false, 5.2 * u), 5.2 * u, hex, a, x0 + 8 * u, y, "left", x1 - x0 - 8 * u)
+  const q = todaysQuote(), fz = clamp((x1 - x0 - 9 * u) / (q.length * 0.5), 5.2 * u, 6.4 * u)   // v12: bigger (up to 6.4pt), shrinks to fit one line
+  text(ctx, q, FUT(false, fz), fz, hex, a, x0 + 8 * u, y, "left", x1 - x0 - 8 * u)
 }
 function panelQuest(ctx, W, H, u) {
   const { a: done, n } = questState(), pal = QPAL(n)
   const x0 = 198 * u, x1 = W - 24 * u, nx = 208 * u
-  text(ctx, tr("today's quest"), FUT(true, 7.8 * u), 7.8 * u, pal.acc, 1, x0, 24 * u, "left", 130 * u)
-  textR(ctx, tr("done"), FUT(false, 5.2 * u), 5.2 * u, SILVER, 0.6, x1, 24.6 * u, 30 * u)
-  textR(ctx, `${n}/2`, FUT(true, 11 * u), 11 * u, n ? pal.name : SILVER, n ? 1 : 0.55, x1 - 21 * u, 23.6 * u, 40 * u)
-  text(ctx, tr(n === 2 ? "all done · nice work" : n === 0 ? "nothing logged yet" : "keep going"), FUT(false, 4.9 * u), 4.9 * u, SILVER, 0.5, x0, 34.5 * u, "left", 140 * u)
-  seg(ctx, x0, 41 * u, x1, 41 * u, "#FFFFFF", 0.07, 0.5)
-  const ys = [0, 1].map((i) => (70 + i * 33) * u)
+  text(ctx, tr("today's quest"), FUT(true, 7.8 * u), 7.8 * u, pal.acc, 1, x0, 23 * u, "left", 130 * u)
+  textR(ctx, tr("done"), FUT(false, 5.2 * u), 5.2 * u, SILVER, 0.6, x1, 23.6 * u, 30 * u)
+  textR(ctx, `${n}/2`, FUT(true, 11 * u), 11 * u, n ? pal.name : SILVER, n ? 1 : 0.55, x1 - 21 * u, 22.6 * u, 40 * u)
+  text(ctx, tr(n === 2 ? "all done · nice work" : n === 0 ? "nothing logged yet" : "keep going"), FUT(false, 4.9 * u), 4.9 * u, SILVER, 0.5, x0, 32.5 * u, "left", 140 * u)
+  seg(ctx, x0, 38.5 * u, x1, 38.5 * u, "#FFFFFF", 0.07, 0.5)
+  const ys = [0, 1].map((i) => (55 + i * 25) * u)                   // v12: rows tightened to make room for the streak cells
   seg(ctx, nx, ys[0], nx, ys[1], SILVER, 0.14, 1 * u)
   if (done[0] && done[1]) { seg(ctx, nx, ys[0], nx, ys[1], pal.glow, 0.18, 6 * u); seg(ctx, nx, ys[0], nx, ys[1], pal.acc, 0.85, 1.4 * u) }
   QUEST_ROWS.forEach(([cap, label, kind, yes, no], i) => {
     const y = ys[i], d = done[i]
     if (d) { dot(ctx, nx, y, 11 * u, pal.glow, 0.1); dot(ctx, nx, y, 7.6 * u, pal.glow, 0.2); dot(ctx, nx, y, 6.2 * u, pal.done, 1); tick(ctx, nx, y, 5.6 * u, "#08141A", 1, 1.3 * u) }
     else { dot(ctx, nx, y, 6 * u, "#0A0A12", 0.9); strokeEll(ctx, nx, y, 6 * u, SILVER, 0.3, 0.9 * u) }
-    questBadge(ctx, kind, 230 * u, y, 10.5 * u, d, pal, u)
+    questBadge(ctx, kind, 230 * u, y, 9.5 * u, d, pal, u)
     text(ctx, tr(cap), FUT(false, 4.7 * u), 4.7 * u, d ? pal.acc : SILVER, d ? 0.9 : 0.4, 246 * u, y - 5.4 * u, "left", 70 * u)
     text(ctx, label, FUT(false, 9.4 * u), 9.4 * u, d ? pal.name : SILVER, d ? 1 : 0.55, 246 * u, y + 2.8 * u, "left", 80 * u)
     textR(ctx, tr(d ? yes : no), FUT(true, 5.2 * u), 5.2 * u, d ? pal.acc : SILVER, d ? 0.95 : 0.4, x1, y, 56 * u)
   })
-  questBar(ctx, x0, x1, 131 * u, u, done, pal)
-  seg(ctx, x0, 142 * u, x1, 142 * u, "#FFFFFF", 0.07, 0.5)
-  quoteLine(ctx, x0, x1, 154 * u, u, SILVER, 0.78, pal.acc)
+  questBar(ctx, x0, x1, 98 * u, u, done, pal)
+  panelStreaks(ctx, x0, x1, 116.5 * u, u)
+  seg(ctx, x0, 138 * u, x1, 138 * u, "#FFFFFF", 0.07, 0.5)
+  quoteLine(ctx, x0, x1, 151 * u, u, SILVER, 0.82, pal.acc)
+}
+// v12 medium: the streak cells (flame · number · label, same aligned statRow) sit in the right panel, split by a fading hairline
+function panelStreaks(ctx, x0, x1, y, u) {
+  const s = LIVE.streaks; if (!s) return
+  const cx = (x0 + x1) / 2, a0 = y - 9 * u, a1 = y + 15 * u, n = 10
+  for (let i = 0; i < n; i++) { const f = 1 - Math.abs((i + 0.5) / n * 2 - 1); seg(ctx, cx, a0 + (a1 - a0) * i / n, cx, a0 + (a1 - a0) * (i + 1) / n, "#FFFFFF", 0.03 + 0.11 * f, 0.5) }
+  statRow(ctx, s, cx, y, 48 * u, u, true)
 }
 // small strip when no chaos locks: the divider doubles as the progress bar; chips carry the same flames
 // v10 small quest strip: the 2 streak cells above already carry each quest's done mark; this adds a quiet label + a 2-segment bar,
