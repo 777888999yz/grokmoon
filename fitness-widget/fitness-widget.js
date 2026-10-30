@@ -1,4 +1,4 @@
-// Mister 14 · Fitness Quest widget · v13.16 (glow B default · quest panel = one balanced block: tiles + verse tied with a fixed gap, verse grows into the spare room, group centred so top clearance = bottom clearance · verse edges on the tile edges) · v13.15 (quest star off by default · galaxy done-glow questGlow A-E, default A nebula · questIcon default S solid glyphs) · v13.14 (quest panel: no "today's quest" header or x/2 counter, a star instead (1/2 sparkle, 2/2 radiant) · grid P = J + optical polish (default) · questFont F/R/V/U · questIcon A/B/R/S · grids L/M/N) · v13.13 (quest tiles J: a 2x2 grid · word over its icon, streak number over its flame · new default · K = number column on the tile's right edge) · v13.12 (F/G: both quest tiles share one geometry: same icon box, column x, word baseline and flame row; the pot + steam fit the dumbbell's box) · v13.11 (stacked tiles F: icon left spanning both lines, word over flame + number left-aligned to one x · new default · G = same, centred column) · v13.10 (stacked tiles D: label alone on top, [icon] [flame] [number] side by side below · new default) · v13.9 (quest tiles stacked + centred: label on top, a much bigger flame + streak below · questStack A/B/C) · v13.8 (galaxy flows across the whole medium widget behind the quest panel, galaxyFlow 1/2/3, stars dimmed behind text) · v13.7 (gold-lit done tiles, richer glow, flames 1.5x, header lifted so top = bottom clearance, new icon art A/B/C via questArt, 57 sombre verses removed → 1,252) · v13.6 (quest tiles: status words removed, centred [icon] Label [flame N] row, bigger; done tile lights up, not-done dim; questTiles 1 glow (default) | 2 underline | 3 tint) · v13.5 (borderless TODAY'S QUEST / RESTRICTED panel: frame and glass box removed, soft fading haze behind the text; panelFrame "soft" | "faint" | "glass") · v13.4 (galaxy balanced for 1,555: 16 superior star slots, GAL_GROW_K 280; verse fills the panel under the tiles, fit-to-box 13 → 7pt, up to 5 lines, reference 6pt) · v13.3 (1309 verses: sombre/half-negative ones removed) · v13.2 (verse text 9.5pt max, 6.2pt floor, up to 4 lines, reference 5.4; 1553 standalone verses incl. Joshua 1:9 / Isaiah 40:31 / Micah 6:8) · v13.1 (bigger verse text) · v13 (Bible verses (KJV) replace the quotes, a new one every hour; compact right panel A/B with the streaks folded in; ring-text options) · v12 (icy blue-white Milky Way band; medium: bigger centred XP ring, streak cells moved into the right panel, bigger quote; aligned stat cells: flame + number + label on one axis; real widget size + inset quest panel, clear star tiers; badges + medals build the Milky Way, 8 realistic astrophotography star designs per tier + realistic chaos looks, random-but-stable, twinkle + milestone flare: no medals = dark sky; Train | Cook bar, chaos blood theme)
+// Mister 14 · Fitness Quest widget · v13.18 (sinister chaos screen: chaosStyle S1 blood seal | S2 chained glitch | S3 quarantine (default) | CLEAN = v13.17 look; all-red unless chaosTierColours; XP to cleanse from the Widget-tab key chaosCleanseXP, else built-in 8,888 / 3,333 / 1,111) · v13.17 (chaos mode, medium: the whole widget becomes the RESTRICTED screen: XP ring, level, interest, flames and verse hidden; big RESTRICTED title + lock, restriction pills sized and centred for 1-5 locks · chaosLayout A hero | B hero + escape hint + cleansed count (default) | C tier meter + still-free list | OLD = v13.16 look) · v13.16 (glow B default · quest panel = one balanced block: tiles + verse tied with a fixed gap, verse grows into the spare room, group centred so top clearance = bottom clearance · verse edges on the tile edges) · v13.15 (quest star off by default · galaxy done-glow questGlow A-E, default A nebula · questIcon default S solid glyphs) · v13.14 (quest panel: no "today's quest" header or x/2 counter, a star instead (1/2 sparkle, 2/2 radiant) · grid P = J + optical polish (default) · questFont F/R/V/U · questIcon A/B/R/S · grids L/M/N) · v13.13 (quest tiles J: a 2x2 grid · word over its icon, streak number over its flame · new default · K = number column on the tile's right edge) · v13.12 (F/G: both quest tiles share one geometry: same icon box, column x, word baseline and flame row; the pot + steam fit the dumbbell's box) · v13.11 (stacked tiles F: icon left spanning both lines, word over flame + number left-aligned to one x · new default · G = same, centred column) · v13.10 (stacked tiles D: label alone on top, [icon] [flame] [number] side by side below · new default) · v13.9 (quest tiles stacked + centred: label on top, a much bigger flame + streak below · questStack A/B/C) · v13.8 (galaxy flows across the whole medium widget behind the quest panel, galaxyFlow 1/2/3, stars dimmed behind text) · v13.7 (gold-lit done tiles, richer glow, flames 1.5x, header lifted so top = bottom clearance, new icon art A/B/C via questArt, 57 sombre verses removed → 1,252) · v13.6 (quest tiles: status words removed, centred [icon] Label [flame N] row, bigger; done tile lights up, not-done dim; questTiles 1 glow (default) | 2 underline | 3 tint) · v13.5 (borderless TODAY'S QUEST / RESTRICTED panel: frame and glass box removed, soft fading haze behind the text; panelFrame "soft" | "faint" | "glass") · v13.4 (galaxy balanced for 1,555: 16 superior star slots, GAL_GROW_K 280; verse fills the panel under the tiles, fit-to-box 13 → 7pt, up to 5 lines, reference 6pt) · v13.3 (1309 verses: sombre/half-negative ones removed) · v13.2 (verse text 9.5pt max, 6.2pt floor, up to 4 lines, reference 5.4; 1553 standalone verses incl. Joshua 1:9 / Isaiah 40:31 / Micah 6:8) · v13.1 (bigger verse text) · v13 (Bible verses (KJV) replace the quotes, a new one every hour; compact right panel A/B with the streaks folded in; ring-text options) · v12 (icy blue-white Milky Way band; medium: bigger centred XP ring, streak cells moved into the right panel, bigger quote; aligned stat cells: flame + number + label on one axis; real widget size + inset quest panel, clear star tiers; badges + medals build the Milky Way, 8 realistic astrophotography star designs per tier + realistic chaos looks, random-but-stable, twinkle + milestone flare: no medals = dark sky; Train | Cook bar, chaos blood theme)
 // Scriptable · small + medium · built-in galaxy background drawn live (no setup needed)
 //
 // SETUP: run this script once in the Scriptable app, then add a small Scriptable widget to your
@@ -203,7 +203,7 @@ function parseStats(text) {
   const KEYS = { xp: "xp", totalxp: "xp", rank: "rank", rankicon: "rankIcon", level: "level", lv: "level", next: "next", nextrank: "next",
     xpin: "xpIn", xpneed: "xpNeed", exercise: "exercise", cooking: "cooking", savings: "savings", badges: "badges",
     traintoday: "trainToday", cooktoday: "cookToday", chaosstate: "chaosState", chaoscover: "chaosCover", chaosnames: "chaosNames",
-    chaostiernames: "chaosTierNames", cleansedmedals: "cleansedMedals",
+    chaostiernames: "chaosTierNames", cleansedmedals: "cleansedMedals", chaoscleansexp: "chaosCleanseXP",
     medals: "badges", medalstotal: "medalsTotal", prismatic: "prismatic", diamond: "diamond", gold: "gold" }
   for (const r of rows) {
     const k = KEYS[String(r[0] || "").toLowerCase().replace(/[^a-z]/g, "")]
@@ -226,7 +226,7 @@ function parseStats(text) {
     for (const [k, e] of [["prismatic", "🌈"], ["diamond", "💎"], ["gold", "🥇"]]) { const m = any(new RegExp(e + "\\s*(\\d+)", "u")); if (m) out[k] = m[1] }
   }
   if (out.rank && !out.rankIcon) Object.assign(out, splitRank(out.rank))
-  for (const k of ["xp", "level", "xpIn", "xpNeed", "exercise", "cooking", "savings", "badges", "medalsTotal", "prismatic", "diamond", "gold", "trainToday", "cookToday", "chaosCover", "cleansedMedals"])
+  for (const k of ["xp", "level", "xpIn", "xpNeed", "exercise", "cooking", "savings", "badges", "medalsTotal", "prismatic", "diamond", "gold", "trainToday", "cookToday", "chaosCover", "cleansedMedals", "chaosCleanseXP"])
     if (out[k] !== undefined) { const n = num(out[k]); if (n === undefined) delete out[k]; else out[k] = n }
   return out.xp !== undefined ? out : null
 }
@@ -977,6 +977,7 @@ function render(W, H, bg, s, source) {
   if (SKY() && __STAR_DRAW) { __STAR_DRAW(); __STAR_DRAW = null }   // after the eclipse and the chaos tint: red-bled, never hidden
   if (SKY()) skyVignette(ctx, W, H)
   const u = H / 170
+  if (CHAOS_HERO()) { if (CHAOS_STYLE === "CLEAN") chaosHero(ctx, W, H, s, u, CHAOS_LAYOUT); else chaosSinister(ctx, W, H, s, u, CHAOS_STYLE); statusDot(ctx, W, u, source); return ctx.getImage() }   // v13.17: chaos takes over the whole medium widget
   const pct = clamp(s.xpNeed > 0 ? s.xpIn / s.xpNeed : 0, 0, 1)
   const heroF = FS.hero(24 * u * FS.heroK)
   const tiny = FS.cap(6.4 * u * FS.capK)
@@ -1134,8 +1135,8 @@ function chaosTint(ctx, W, H) {
   if (st === "prismatic") embers(ctx, W, H, u)
 }
 function embers(ctx, W, H, u) {                  // prismatic only: drifting embers + hairline cracks
-  const r = rng(909), x0 = (C_MED() ? 190 : 6) * u
-  for (let i = 0; i < (C_MED() ? 26 : 14); i++) {
+  const HERO = CHAOS_HERO(), r = rng(909), x0 = (C_MED() && !HERO ? 190 : 6) * u
+  for (let i = 0; i < (C_MED() ? (HERO ? 34 : 26) : 14); i++) {
     const x = x0 + r() * (W - x0 - 6 * u), y = H * (0.35 + 0.62 * Math.pow(r(), 0.6)), k = 0.4 + r() * 0.9
     dot(ctx, x, y, 3.2 * k * u, "#FF5A2A", 0.05); dot(ctx, x, y, 0.8 * k * u, i % 3 ? "#FF8A3A" : "#FFD08A", 0.55 + r() * 0.35)
   }
@@ -1148,7 +1149,8 @@ function embers(ctx, W, H, u) {                  // prismatic only: drifting emb
       x = nx; y = ny
     }
   }
-  if (C_MED()) { crack(W - 4 * u, H - 2 * u, -1, -0.5, 6, 11); crack(W * 0.5 + 10 * u, 0, 0.5, 1, 4, 23) }
+  if (HERO) { crack(W - 4 * u, H - 2 * u, -1, -0.5, 6, 11); crack(4 * u, 2 * u, 1, 0.45, 4, 23) }   // v13.17: corners only, clear of the title
+  else if (C_MED()) { crack(W - 4 * u, H - 2 * u, -1, -0.5, 6, 11); crack(W * 0.5 + 10 * u, 0, 0.5, 1, 4, 23) }
   else { crack(W - 2 * u, H - 2 * u, -1, -0.3, 5, 11) }
 }
 const C_MED = () => !!(LIVE.chaos && LIVE.chaos.family === "medium")
@@ -1309,6 +1311,297 @@ function strip3(ctx, W, H, u, pal, LK, st) {
   text(ctx, LK ? CHAOS_TIERS[LK - 1].toUpperCase() : "NO TIERS LOCKED", FUT(false, 5.4 * u), 5.4 * u, LK ? pal.name : SILVER, LK ? 0.9 : 0.5, mx, 161 * u, "left", 100 * u)
 }
 
+
+// ---------------- v13.17 CHAOS HERO (medium, any tier locked): the whole widget is the restricted screen ----------------
+// FITNESS_CONFIG.chaosLayout: "A" hero: big RESTRICTED + lock, "<state> chaos · n of 5 tiers locked", the pills
+//   "B" escape (default): same as A, plus a footer "cleanse the <state> chaos medal to unlock · n cleansed so far" (chaosState, cleansedMedals)
+//   "C" meter: big RESTRICTED + n/5, a 5-step tier meter, the pills, then "still free · …" (chaosCover, chaosTierNames)
+//   "OLD": the v13.16 look (XP ring on the left, restricted list + verse on the right)
+// Data used: chaosState (worst uncleansed medal type), chaosCover (tiers 1..n locked), chaosTierNames, cleansedMedals. Nothing else.
+const CHAOS_LAYOUT = String(CFG.chaosLayout || "B").toUpperCase()
+const CHAOS_HERO = () => !!(LIVE.chaos && LIVE.chaos.family === "medium" && LIVE.chaos.lock > 0 && ["A", "B", "C"].includes(CHAOS_LAYOUT))
+const STATE_NAME = { gold: "Gold", diamond: "Diamond", prismatic: "Prismatic" }
+// pill metrics in units of the pill font size fz: [pad · lock · gap · name · pad], height, gaps
+const PILL = { padL: 0.78, lock: 0.86, gapL: 0.5, padR: 0.84, h: 2.15, gx: 0.6, gy: 0.55 }
+const pillW1 = (nm) => PILL.padL + PILL.lock + PILL.gapL + futW(nm, 1, true) + PILL.padR
+// best rows for the active names: tier order kept, every contiguous split tried, the one that lets the font be biggest wins
+// (a small penalty for lopsided rows keeps 5 = 3 + 2, 3 = one row or 2 + 1, 1 = one big pill)
+function pillLayout(names, maxW, maxH, fzMax) {
+  const n = names.length, w1 = names.map(pillW1)
+  let best = null
+  for (let mask = 0; mask < (1 << Math.max(0, n - 1)); mask++) {
+    const rows = [[0]]
+    for (let i = 1; i < n; i++) { if (mask & (1 << (i - 1))) rows.push([i]); else rows[rows.length - 1].push(i) }
+    const rw = rows.map((r) => r.reduce((a, i) => a + w1[i], 0) + (r.length - 1) * PILL.gx)
+    const R = rows.length, fz = Math.min(fzMax, maxW / Math.max(...rw), maxH / (R * PILL.h + (R - 1) * PILL.gy))
+    const cnt = rows.map((r) => r.length), lop = Math.max(...cnt) - Math.min(...cnt), top = cnt[0] >= cnt[R - 1] ? 0 : 0.02
+    const score = fz * (1 - 0.06 * Math.max(0, lop - 1) - top)
+    if (!best || score > best.score + 1e-9) best = { rows, fz, score }
+  }
+  return best
+}
+function pill(ctx, x, y, fz, nm, pal, u) {
+  const w = pillW1(nm) * fz, h = PILL.h * fz, r = h / 2, cy = y + h / 2
+  glowRR(ctx, x, y, w, h, r, pal.glow, 0.6, 0.32 * fz)
+  fillPath(ctx, rrPath(x, y, w, h, r), "#1A0509", 0.6); fillPath(ctx, rrPath(x, y, w, h, r), pal.glow, 0.2)
+  seg(ctx, x + r, y + 0.09 * fz, x + w - r, y + 0.09 * fz, "#FFFFFF", 0.14, 0.07 * fz)                 // glass sheen
+  strokeP(ctx, rrPath(x, y, w, h, r), pal.acc, 0.85, Math.max(0.6 * u, 0.075 * fz))
+  const lx = x + (PILL.padL + PILL.lock / 2) * fz
+  dot(ctx, lx, cy, 0.62 * fz, pal.glow, 0.28); lockIcon(ctx, lx, cy + 0.04 * fz, PILL.lock * fz, pal.name, 1, false)
+  text(ctx, nm, FUT(true, fz), fz, pal.name, 1, x + (PILL.padL + PILL.lock + PILL.gapL) * fz, cy + 0.245 * fz, "left", w)
+  return w
+}
+function drawPills(ctx, L, names, cx, y0, pal, u) {
+  const fz = L.fz
+  L.rows.forEach((row, k) => {
+    const rw = (row.reduce((a, i) => a + pillW1(names[i]), 0) + (row.length - 1) * PILL.gx) * fz
+    let x = cx - rw / 2
+    const y = y0 + k * (PILL.h + PILL.gy) * fz
+    row.forEach((i) => { x += pill(ctx, x, y, fz, names[i], pal, u) + PILL.gx * fz })
+  })
+  return L.rows.length * PILL.h * fz + (L.rows.length - 1) * PILL.gy * fz
+}
+// big title: [lock] RESTRICTED (optionally a trailing n/5), centred on cx, cap centre on yc; returns the title height used
+function heroTitle(ctx, cx, yc, fz, pal, u, tail) {
+  const T = tr("restricted"), tw = futW(T, fz, true), ls = fz * 0.86, gp = fz * 0.42
+  const tl = tail ? futW(tail, fz * 0.62, true) + fz * 0.3 : 0, total = ls + gp + tw + tl, x0 = cx - total / 2
+  const lx = x0 + ls / 2
+  for (let i = 0; i < 6; i++) dot(ctx, lx, yc, ls * (1.25 - i * 0.12), pal.glow, 0.05)
+  lockIcon(ctx, lx, yc + ls * 0.05, ls, pal.name, 1, false)
+  glowText(ctx, T, FUT(true, fz), fz, pal.acc, x0 + ls + gp, yc + 0.245 * fz, "left", 2.2)
+  if (tail) text(ctx, tail, FUT(true, fz * 0.62), fz * 0.62, pal.name, 0.95, x0 + ls + gp + tw + fz * 0.3, yc + 0.245 * fz * 0.62 + fz * 0.12, "left", 80 * u)
+}
+function heroLine(ctx, str, cx, yc, fz, hex, a, maxW) {        // one tracked caps line, shrunk to fit
+  const t = tr(str), f = Math.min(fz, maxW / Math.max(1e-6, futW(t, 1)))
+  text(ctx, t, FUT(false, f), f, hex, a, cx, yc + 0.245 * f, "center", maxW + 20)
+}
+function chaosHero(ctx, W, H, s, u, V) {
+  const C = LIVE.chaos, st = C.state, pal = CPAL[st] || CPAL.prismatic, LK = clamp(C.lock, 1, 5)
+  const names = CHAOS_TIERS.slice(0, LK), cx = W / 2, mx = 18 * u, maxW = W - 2 * mx
+  const SN = STATE_NAME[st] || "Chaos", cl = Math.max(0, Math.floor(Number(s.cleansedMedals) || 0))
+  softBackdrop(ctx, 10 * u, 10 * u, W - 20 * u, H - 20 * u, u, pal.glow)
+  // block = title · gap · sub/meter · gap · pills · (gap · footer); centred vertically between the 12u margins
+  const tz = Math.min(30 * u, (W - 110 * u) / futW(tr("restricted"), 1, true))
+  const subH = V === "C" ? 14 * u : 7 * u, footH = V === "A" ? 0 : 7 * u
+  const g1 = 9 * u, g2 = 11 * u, g3 = 10 * u
+  const fzMax = LK === 1 ? 19 * u : LK <= 3 ? 14 * u : 12 * u
+  const avail = H - 24 * u - (tz * 0.75 + g1 + subH + g2 + (footH ? g3 + footH : 0))
+  const L = pillLayout(names, maxW, avail, fzMax)
+  const pillsH = L.rows.length * PILL.h * L.fz + (L.rows.length - 1) * PILL.gy * L.fz
+  const blockH = tz * 0.75 + g1 + subH + g2 + pillsH + (footH ? g3 + footH : 0)
+  let y = (H - blockH) / 2
+  heroTitle(ctx, cx, y + tz * 0.375, tz, pal, u, "")
+  y += tz * 0.75 + g1
+  if (V === "C") {                                                     // 5-step tier meter (lit = locked tier) + n/5, then the chaos type
+    const nz = 9 * u, ns = `${LK}/5`, nw = futW(ns, nz, true), mw = Math.min(maxW - nw - 8 * u, 170 * u), g = 3 * u, sw = (mw - 4 * g) / 5
+    const x0 = cx - (mw + 7 * u + nw) / 2, sh = 3.4 * u, sy = y + 1.6 * u
+    for (let i = 0; i < 5; i++) {
+      const x = x0 + i * (sw + g), on = i < LK
+      if (on) { glowRR(ctx, x, sy, sw, sh, sh / 2, pal.glow, 0.7, 2.4 * u); fillPath(ctx, rrPath(x, sy, sw, sh, sh / 2), pal.acc, 0.95) }
+      else fillPath(ctx, rrPath(x, sy, sw, sh, sh / 2), SILVER, 0.13)
+    }
+    text(ctx, ns, FUT(true, nz), nz, pal.name, 1, x0 + mw + 7 * u, sy + sh / 2 + 0.245 * nz, "left", 40 * u)
+    heroLine(ctx, `${SN} chaos · ${LK === 1 ? "tier 1" : "tiers 1–" + LK} locked`, cx, sy + sh + 6.4 * u, 5.8 * u, SILVER, 0.72, maxW)
+  } else heroLine(ctx, `${SN} chaos · ${LK} of 5 ${LK === 1 ? "tier" : "tiers"} locked`, cx, y + subH / 2, 6.6 * u, SILVER, 0.75, maxW)
+  y += subH + g2
+  y += drawPills(ctx, L, names, cx, y, pal, u)
+  if (!footH) return
+  y += g3
+  seg(ctx, cx - 60 * u, y - g3 / 2, cx + 60 * u, y - g3 / 2, pal.acc, 0.16, 0.5)
+  if (V === "B") {
+    heroLine(ctx, `cleanse the ${SN} chaos medal to unlock` + (cl ? ` · ${cl} cleansed so far` : ""), cx, y + footH / 2, 6.2 * u, pal.name, 0.85, maxW)
+  } else {
+    const free = CHAOS_TIERS.slice(LK)
+    heroLine(ctx, free.length ? `still free · ${free.join(" · ")}` : "every tier locked", cx, y + footH / 2, 6 * u, SILVER, free.length ? 0.68 : 0.55, maxW)
+  }
+}
+
+// ---------------- v13.18 SINISTER chaos screen (built on layout B: title · chaos line · pills · the way out) ----------------
+// FITNESS_CONFIG.chaosStyle: "S1" blood seal: engraved RESTRICTED, sigil halo round the lock, iron pills, crimson glow (default)
+//   "S2" chained: condensed glitch title (ghost offsets + scanlines), two iron chains across the widget, cracks from the lock
+//   "S3" quarantine: hazard bands top + bottom, distressed stamped title, barbed wire round the pills, a seal bar through each row (default)
+//   "CLEAN": the v13.17 hero (chaosLayout A/B/C apply only there)
+// FITNESS_CONFIG.chaosTierColours: true keeps the Gold amber / Diamond mauve tint; default false = blood red at every tier.
+// XP to cleanse: Widget-tab key chaosCleanseXP (reads the Rules cleanse cost live); built-in fallback below if the key is missing.
+const CHAOS_STYLE = String(CFG.chaosStyle || "S3").toUpperCase()
+const CHAOS_TIER_COL = CFG.chaosTierColours === true
+const CLEANSE_XP = { prismatic: 8888, diamond: 3333, gold: 1111 }   // fallback only (Rules: |XP| of the chaos medal)
+const condW = (str, fz) => futW(str, fz, true) * 0.74                  // Futura Condensed ExtraBold ≈ 0.74 of Futura Bold
+const FUTC = (z) => new Font("Futura-CondensedExtraBold", z)
+function polyPath(pts) { const p = new Path(); pts.forEach(([x, y], i) => i ? p.addLine(P_(x, y)) : p.move(P_(x, y))); p.closeSubpath(); return p }
+function linesStroke(ctx, pts, hex, a, w) { for (let i = 1; i < pts.length; i++) seg(ctx, pts[i - 1][0], pts[i - 1][1], pts[i][0], pts[i][1], hex, a, w) }
+// iron chain from (x0,y0) to (x1,y1): alternating face-on oval links and edge-on bars, dark iron with a blood-lit rim
+function chain(ctx, x0, y0, x1, y1, u, L, a) {
+  const dx = x1 - x0, dy = y1 - y0, len = Math.hypot(dx, dy), ux = dx / len, uy = dy / len, n = Math.floor(len / (L * 0.78))
+  for (let k = 0; k <= n; k++) {
+    const t = k * L * 0.78, cx = x0 + ux * t, cy = y0 + uy * t
+    if (k % 2 === 0) {
+      const ring = Array.from({ length: 22 }, (_, i) => { const q = i / 22 * Math.PI * 2, ex = Math.cos(q) * L * 0.5, ey = Math.sin(q) * L * 0.26; return [cx + ex * ux - ey * uy, cy + ex * uy + ey * ux] })
+      ring.push(ring[0])
+      linesStroke(ctx, ring, "#000000", 0.55 * a, 2.6 * u); linesStroke(ctx, ring, "#2A1418", a, 1.5 * u); linesStroke(ctx, ring, "#B0283A", 0.45 * a, 0.45 * u)
+    } else {
+      const h = L * 0.36
+      seg(ctx, cx - ux * h, cy - uy * h, cx + ux * h, cy + uy * h, "#000000", 0.55 * a, 2.8 * u)
+      seg(ctx, cx - ux * h, cy - uy * h, cx + ux * h, cy + uy * h, "#2A1418", a, 1.7 * u)
+      seg(ctx, cx - ux * h, cy - uy * h - 0.5 * u, cx + ux * h, cy + uy * h - 0.5 * u, "#C83A48", 0.4 * a, 0.4 * u)
+    }
+  }
+}
+function crackFrom(ctx, x, y, ang, n, step, u, seed, a) {          // jagged crack with one fork, red-hot core
+  const q = rng(seed)
+  for (let i = 0; i < n; i++) {
+    ang += (q() - 0.5) * 0.9
+    const nx = x + Math.cos(ang) * step * (0.7 + q() * 0.6), ny = y + Math.sin(ang) * step * (0.7 + q() * 0.6), w = (1 - i / n)
+    seg(ctx, x, y, nx, ny, "#FF1A2E", 0.1 * a, 2.6 * u * w + 0.6 * u); seg(ctx, x, y, nx, ny, "#FF8A7A", 0.5 * a * w + 0.12, 0.5 * u * w + 0.2 * u)
+    if (i === 1 && n > 3) crackFrom(ctx, nx, ny, ang + (q() > 0.5 ? 0.8 : -0.8), n - 2, step * 0.7, u, seed + 17, a * 0.8)
+    x = nx; y = ny
+  }
+}
+function ash(ctx, W, H, u, seed, n) {                                 // ash flakes + a few embers, denser low down
+  const r = rng(seed)
+  for (let i = 0; i < n; i++) {
+    const x = r() * W, y = H * Math.pow(r(), 0.55), k = 0.4 + r() * 0.8
+    if (i % 5 === 0) { dot(ctx, x, y, 2.6 * k * u, "#FF3A1A", 0.06); dot(ctx, x, y, 0.65 * k * u, "#FF9A5A", 0.75) }
+    else dot(ctx, x, y, 0.5 * k * u, i % 2 ? "#8A7A7C" : "#5A2A30", 0.35 + r() * 0.3)
+  }
+}
+function vignetteHeavy(ctx, W, H, u, k) {                           // dims the galaxy, then darkness closes in from every edge
+  ctx.setFillColor(col("#040002", 0.5 * k)); ctx.fillRect(new Rect(0, 0, W, H))
+  const N = 16
+  for (let i = 0; i < N; i++) { const d = i * 3.2 * u; strokeP(ctx, rrPath(d / 2 - 2 * u, d / 2 - 2 * u, W - d + 4 * u, H - d + 4 * u, 22 * u), "#000000", 0.12 * k * (1 - i / N), 3.4 * u) }
+  for (const [vx, vy] of [[0, 0], [W, 0], [0, H], [W, H]]) for (let i = 0; i < 7; i++) dot(ctx, vx, vy, (78 - i * 10) * u, "#000000", 0.08 * k)
+}
+function crimsonGlow(ctx, x, y, rx, ry, a) { for (let i = 0; i < 12; i++) { const f = 1 - i / 12; ell(ctx, x, y, rx * f, ry * f, i < 6 ? "#6A0010" : "#B0101E", a * (0.05 + 0.02 * (i / 12))) } }
+function hazardBand(ctx, x0, y0, w, h, u, a) {                       // diagonal blood/black warning stripes, faded
+  fillPath(ctx, rrPath(x0, y0, w, h, 0.01), "#0A0002", 0.55 * a)
+  const st = 7 * u
+  for (let x = x0 - h; x < x0 + w; x += st) {
+    const xa = Math.max(x0, x), xb = Math.min(x0 + w, x + st * 0.5)
+    if (xb <= x0) continue
+    fillPath(ctx, polyPath([[x, y0 + h], [x + st * 0.5, y0 + h], [x + st * 0.5 + h, y0], [x + h, y0]].map(([px, py]) => [clamp(px, x0, x0 + w), py])), "#B0101E", 0.42 * a)
+  }
+  seg(ctx, x0, y0, x0 + w, y0, "#FF3A48", 0.3 * a, 0.5 * u); seg(ctx, x0, y0 + h, x0 + w, y0 + h, "#FF3A48", 0.3 * a, 0.5 * u)
+}
+function barbed(ctx, x0, x1, y, u, a) {                              // a strand of barbed wire with X barbs
+  const n = 40, pts = Array.from({ length: n + 1 }, (_, i) => { const x = x0 + (x1 - x0) * i / n; return [x, y + Math.sin(i * 1.7) * 0.6 * u] })
+  linesStroke(ctx, pts, "#000000", 0.5 * a, 1.6 * u); linesStroke(ctx, pts, "#6A4A50", 0.8 * a, 0.6 * u)
+  for (let x = x0 + 9 * u; x < x1 - 4 * u; x += 17 * u) {
+    const s = 2.1 * u
+    seg(ctx, x - s, y - s, x + s, y + s, "#2A1418", a, 0.9 * u); seg(ctx, x - s, y + s, x + s, y - s, "#2A1418", a, 0.9 * u)
+    seg(ctx, x - s, y - s, x + s, y + s, "#C04050", 0.55 * a, 0.35 * u); seg(ctx, x - s, y + s, x + s, y - s, "#C04050", 0.55 * a, 0.35 * u)
+  }
+}
+// sinister pill: dark iron, red hairline, lock; S3 adds rivets
+function ironPill(ctx, x, y, fz, nm, pal, u, S) {
+  const w = pillW1(nm) * fz, h = PILL.h * fz, r = S === "S3" ? h * 0.22 : h / 2, cy = y + h / 2
+  glowRR(ctx, x, y, w, h, r, "#C0081E", 0.45, 0.28 * fz)
+  fillPath(ctx, rrPath(x, y, w, h, r), "#070203", 0.88); fillPath(ctx, rrPath(x, y + h * 0.5, w, h * 0.5, r), "#000000", 0.35)
+  fillPath(ctx, rrPath(x, y, w, h, r), "#5A0010", 0.16)
+  seg(ctx, x + r, y + 0.1 * fz, x + w - r, y + 0.1 * fz, "#FF9A9A", 0.08, 0.06 * fz)
+  strokeP(ctx, rrPath(x, y, w, h, r), pal.acc, 0.8, Math.max(0.55 * u, 0.06 * fz))
+  if (S === "S3") for (const xx of [x + 0.32 * fz, x + w - 0.32 * fz]) for (const yy of [y + 0.32 * fz, y + h - 0.32 * fz]) { dot(ctx, xx, yy, 0.13 * fz, "#000000", 0.8); dot(ctx, xx - 0.03 * fz, yy - 0.03 * fz, 0.07 * fz, "#C07078", 0.7) }
+  const lx = x + (PILL.padL + PILL.lock / 2) * fz
+  dot(ctx, lx, cy, 0.6 * fz, "#FF1A2E", 0.18); lockIcon(ctx, lx, cy + 0.04 * fz, PILL.lock * fz, pal.acc, 1, false)
+  text(ctx, nm, FUT(true, fz), fz, pal.name, 0.96, x + (PILL.padL + PILL.lock + PILL.gapL) * fz, cy + 0.245 * fz, "left", w)
+  return w
+}
+function partsW(parts) { return parts.reduce((a, p) => a + (p[0] === "·" ? 0 : futW(tr(p[0]).trim(), 1, p[3])), 0) + 0.42 * (parts.length - 1) }   // width at fz = 1 (big-line gap)
+function partsLine(ctx, parts, cx, yc, fz, maxW, gap) {                  // [[text, hex, alpha, bold]] centred with even gaps; false if it can't fit at 82% size
+  const T = parts.map((p) => [p[0] === "·" ? "·" : tr(p[0]).trim(), p[1], p[2], p[3]]), G = gap || 0.6
+  const pw = (p) => p[0] === "·" ? 0 : futW(p[0], 1, p[3])          // "·" = a drawn dot centred in its gap
+  const w1 = T.reduce((a, p) => a + pw(p), 0) + G * (T.length - 1), f = Math.min(fz, maxW / Math.max(1e-6, w1))
+  if (f < fz * 0.82) return false
+  let x = cx - w1 * f / 2
+  for (const p of T) {
+    const [t, hex, a, b] = p
+    if (t === "·") { dot(ctx, x - 0.02 * f, yc, 0.09 * f, hex, a); x += G * f; continue }
+    text(ctx, t, FUT(b, f), f, hex, a, x, yc + 0.245 * f, "left", futW(t, f, b) + 20); x += futW(t, f, b) + G * f
+  }
+  return true
+}
+function sinTitle(ctx, cx, yc, tz, pal, u, S) {
+  const T = S === "S2" ? "RESTRICTED" : S === "S1" ? "RESTRICTED" : tr("restricted")
+  const tw = S === "S2" ? condW(T, tz) : futW(T, tz, true) * (S === "S1" ? 0.97 : 1), ls = tz * 0.8, gp = tz * (S === "S1" ? 0.58 : 0.4)
+  const total = ls + gp + tw, x0 = cx - total / 2, lx = x0 + ls / 2, tx = x0 + ls + gp, ty = yc + 0.245 * tz
+  const F = S === "S2" ? FUTC(tz) : FUT(true, tz), red = "#FF2A3C", deep = "#5A0010"
+  crimsonGlow(ctx, cx, yc, total * 0.75, tz * 1.7, 1)
+  // padlock + its halo
+  if (S === "S1") {                                                   // sigil halo: two rings, 24 ticks, a slit "eye" of light
+    for (let i = 0; i < 7; i++) dot(ctx, lx, yc, ls * (1.5 - i * 0.12), "#C0081E", 0.05)
+    strokeEll(ctx, lx, yc, ls * 0.98, "#FF3A48", 0.55, 0.5 * u); strokeEll(ctx, lx, yc, ls * 1.18, "#FF3A48", 0.22, 0.35 * u)
+    for (let i = 0; i < 24; i++) { const a = i / 24 * Math.PI * 2, r0 = ls * 1.0, r1 = ls * (i % 6 ? 1.08 : 1.16); seg(ctx, lx + Math.cos(a) * r0, yc + Math.sin(a) * r0, lx + Math.cos(a) * r1, yc + Math.sin(a) * r1, "#FF5A60", i % 6 ? 0.35 : 0.75, 0.4 * u) }
+    for (const sg of [-1, 1]) { ell(ctx, lx + sg * ls * 1.18, yc, ls * 0.07, ls * 0.07, "#FF6A6A", 0.85) }
+  } else for (let i = 0; i < 6; i++) dot(ctx, lx, yc, ls * (1.25 - i * 0.12), "#C0081E", 0.06)
+  if (S === "S2") { crackFrom(ctx, lx - ls * 0.4, yc + ls * 0.5, Math.PI * 0.8, 5, 7 * u, u, 31, 0.9); crackFrom(ctx, lx + ls * 0.2, yc - ls * 0.55, -Math.PI * 0.62, 4, 6 * u, u, 47, 0.8); crackFrom(ctx, lx - ls * 0.5, yc - ls * 0.2, Math.PI * 1.1, 4, 6 * u, u, 53, 0.7) }
+  lockIcon(ctx, lx, yc + ls * 0.05, ls, "#FFD8D4", 1, false)
+  // the word
+  if (S === "S2") {                                                   // glitch: offset ghosts, then scanlines + a few torn slivers
+    text(ctx, T, F, tz, "#FF0030", 0.5, tx - 1.4 * u, ty, "left", tw + 40)
+    text(ctx, T, F, tz, "#FFD0D0", 0.22, tx + 1.2 * u, ty - 0.3 * u, "left", tw + 40)
+  }
+  for (const [rad, a] of [[0.09, 0.03], [0.05, 0.05]]) for (let i = 0; i < 8; i++) { const t = i / 8 * Math.PI * 2; text(ctx, T, F, tz, "#FF1A2E", a * 2, tx + Math.cos(t) * tz * rad, ty + Math.sin(t) * tz * rad, "left", tw + 40) }
+  text(ctx, T, F, tz, "#000000", 0.7, tx + 0.5 * u, ty + 0.9 * u, "left", tw + 40)        // drop shadow
+  text(ctx, T, F, tz, red, 1, tx, ty, "left", tw + 40)
+  if (S === "S1") text(ctx, T, F, tz, "#2A0006", 0.5, tx, ty + 0.06 * tz, "left", tw + 40)        // carved: shadow pools in the lower body, lit top edge
+  const top = yc - tz * 0.36, bot = yc + tz * 0.36
+  if (S === "S2") {
+    for (let y = top; y < bot; y += 1.15 * u) seg(ctx, tx - 2 * u, y, tx + tw + 2 * u, y, "#000000", 0.3, 0.42 * u)
+    const q = rng(77); for (let i = 0; i < 5; i++) { const y = top + q() * (bot - top), x = tx + q() * tw, w = (8 + q() * 22) * u, off = (q() - 0.5) * 6 * u; fillPath(ctx, rrPath(x + off, y, w, 0.7 * u + q() * 0.8 * u, 0.01), i % 2 ? "#FF2A3C" : "#FFC8C8", i % 2 ? 0.55 : 0.25) }
+  }
+  if (S === "S3") { const q = rng(99); for (let i = 0; i < 140; i++) dot(ctx, tx + q() * tw, top + q() * (bot - top), (0.18 + q() * 0.5) * u, "#0A0002", 0.5 + q() * 0.4) }   // distressed stamp
+}
+function chaosSinister(ctx, W, H, s, u, S) {
+  const C = LIVE.chaos, st = C.state, LK = clamp(C.lock, 1, 5), pal = CHAOS_TIER_COL ? (CPAL[st] || CPAL.prismatic) : CPAL.prismatic
+  const names = CHAOS_TIERS.slice(0, LK), cx = W / 2, mx = 18 * u, maxW = W - 2 * mx, SN = STATE_NAME[st] || "Chaos"
+  vignetteHeavy(ctx, W, H, u, S === "S2" ? 1.15 : 1)
+  ash(ctx, W, H, u, 313 + LK, S === "S1" ? 40 : 60)
+  if (S === "S2") { chain(ctx, -8 * u, H * 0.12, W + 8 * u, H * 0.92, u, 11 * u, 0.85); chain(ctx, -8 * u, H * 0.95, W + 8 * u, H * 0.2, u, 11 * u, 0.7) }
+  const band = S === "S3" ? 7 * u : 0
+  if (S === "S3") { hazardBand(ctx, 0, 0, W, band, u, 1); hazardBand(ctx, 0, H - band, W, band, u, 1) }
+  const tz = S === "S2" ? Math.min(36 * u, (W - 110 * u) / (futW("RESTRICTED", 1, true) * 0.74)) : Math.min(29 * u, (W - 110 * u) / futW(S === "S1" ? "RESTRICTED" : tr("restricted"), 1, true))
+  const cost = Math.round(Number(s.chaosCleanseXP) > 0 ? Number(s.chaosCleanseXP) : CLEANSE_XP[st] || 0), have = Math.round(Number(s.xp) || 0)
+  // S3: big way-out on two centred lines: "8,888 XP TO BREAK THE SEAL" (12.5u) over "YOU HAVE 11,783 XP" / red "NEED 6,888 XP MORE" (10.5u)
+  const hot = "#FF5A60", cold = "#E8C0C0", bright = "#FFE0DC"
+  const P1 = [[`${fmtNum(cost)} xp`, bright, 1, true], ["to break the seal", cold, 0.9, false]]
+  const P2 = have >= cost ? [["you have", cold, 0.75, false], [`${fmtNum(have)} xp`, bright, 0.95, true]] : [["need", hot, 0.95, false], [`${fmtNum(cost - have)} xp`, hot, 1, true], ["more", hot, 0.95, false]]
+  const BIG = S === "S3" && cost > 0, one = BIG ? Math.min(11 * u, maxW / partsW(P1.concat([["·"]], P2))) : 0
+  const big1 = false, F1 = BIG ? Math.min(12.5 * u, maxW / partsW(P1)) : 0, F2 = BIG ? Math.min(10.5 * u, maxW / partsW(P2)) : 0, gF = 3.2 * u
+  const subH = 6.5 * u, footH = !BIG ? 7 * u : big1 ? F1 * 0.9 : F1 * 0.9 + gF + F2 * 0.9, g1 = 8.5 * u, g2 = S === "S3" ? 9 * u : 10 * u, g3 = S === "S3" ? 9 * u : 9.5 * u, marg = (BIG ? 6 * u : 12 * u) + band
+  const fzMax = (LK === 1 ? 18 * u : LK <= 3 ? 13.5 * u : 11.5 * u) * (BIG ? 0.9 : 1)
+  const avail = H - 2 * marg - (tz * 0.75 + g1 + subH + g2 + g3 + footH)
+  const L = pillLayout(names, maxW, avail, fzMax)
+  const pillsH = L.rows.length * PILL.h * L.fz + (L.rows.length - 1) * PILL.gy * L.fz
+  let y = (H - (tz * 0.75 + g1 + subH + g2 + pillsH + g3 + footH)) / 2
+  sinTitle(ctx, cx, y + tz * 0.375, tz, pal, u, S)
+  y += tz * 0.75 + g1
+  const sub = S === "S1" ? `${SN} chaos · ${LK} of 5 sealed` : S === "S2" ? `your vices are sealed · ${LK} of 5` : `quarantine · ${SN} chaos · ${LK} of 5`
+  heroLine(ctx, sub, cx, y + subH / 2, 6.2 * u, "#E8B0B0", 0.72, maxW)
+  y += subH + g2
+  const py = y
+  if (S === "S3") {                                                    // barbed wire above + below the pills, a seal bar behind each row
+    barbed(ctx, mx - 4 * u, W - mx + 4 * u, py - g2 / 2, u, 0.9); barbed(ctx, mx - 4 * u, W - mx + 4 * u, py + pillsH + g3 / 2 - 1 * u, u, 0.9)
+    L.rows.forEach((row, k) => { const ry = py + (k * (PILL.h + PILL.gy) + PILL.h / 2) * L.fz; seg(ctx, mx - 8 * u, ry, W - mx + 8 * u, ry, "#000000", 0.6, 2.2 * u); seg(ctx, mx - 8 * u, ry, W - mx + 8 * u, ry, "#8A1020", 0.75, 0.9 * u) })
+  }
+  L.rows.forEach((row, k) => {
+    const rw = (row.reduce((a, i) => a + pillW1(names[i]), 0) + (row.length - 1) * PILL.gx) * L.fz
+    let x = cx - rw / 2
+    const ry = py + k * (PILL.h + PILL.gy) * L.fz
+    row.forEach((i) => { x += ironPill(ctx, x, ry, L.fz, names[i], pal, u, S) + PILL.gx * L.fz })
+  })
+  y += pillsH + g3
+  if (S !== "S3") seg(ctx, cx - 70 * u, y - g3 / 2, cx + 70 * u, y - g3 / 2, "#FF2A3C", 0.18, 0.5)
+  // the way out: XP to cleanse (+ the gap to current XP when it fits)
+  if (BIG) {
+    if (big1) partsLine(ctx, P1.concat([["·", cold, 0.6, false]], P2), cx, y + footH / 2, F1, maxW)
+    else { partsLine(ctx, P1, cx, y + F1 * 0.45, F1, maxW + 20 * u, 0.42); partsLine(ctx, P2, cx, y + F1 * 0.9 + gF + F2 * 0.45, F2, maxW + 20 * u, 0.42) }
+    return
+  }
+  const yc = y + footH / 2, c = fmtNum(cost)
+  const gapP = have >= cost ? [["·", cold, 0.55, false], [`you have ${fmtNum(have)}`, cold, 0.6, false]] : [["·", cold, 0.55, false], [`need ${fmtNum(cost - have)} more`, hot, 0.9, true]]
+  const main = [[`${c} xp`, "#FFE0DC", 1, true], ["to break the seal", cold, 0.78, false]]
+  if (!cost) heroLine(ctx, `cleanse the ${SN} chaos medal to break the seal`, cx, yc, 6.4 * u, cold, 0.78, maxW)
+  else if (!partsLine(ctx, main.concat(gapP), cx, yc, 6.6 * u, maxW)) partsLine(ctx, main, cx, yc, 6.6 * u, maxW)
+}
 
 // ---------------- SKY + QUEST (live: clock time, LIVE.quest from trainToday / cookToday) ----------------
 const SKY = () => LIVE.sky
