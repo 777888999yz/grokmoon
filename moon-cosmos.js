@@ -1,4 +1,4 @@
-// Grok Reset · EARTH + MOON widget: only Earth and the Moon, lit by an off-screen Sun with real geometry. The Moon laps Earth once a week; no drift, no loop.
+// Grok Reset · EARTH + MOON widget (day / night build, celestial v7: fixed 8am-8pm day, soft dawn / dusk, natural night-only city lights, 8-point telescope stars in 7 clearly different rainbow colours, all the same shape and brightness + one colour per day): only Earth and the Moon, lit by an off-screen Sun with real geometry. The Moon laps Earth once a week; no drift, no loop.
 // Scriptable · small + medium · "transparent" background cropped from your wallpaper
 //
 // SETUP (one time): long-press the home screen, swipe to an empty page, take a screenshot.
@@ -38,6 +38,16 @@ const WEEK = ["Moon", "Earth", "Mars", "Jupiter", "Saturn", "Pluto", "Sun"]   //
 const ROTATE_MINUTES = 0                        // show a new body every N minutes, all day (0 = one body per weekly reset)
 const PLAIN_BLACK = true                          // the sky behind everything is flat black (#000000), no nebula or background stars: the widget melts into a black wallpaper
 const WALLPAPER_MODE = true                      // with a background set up: use ONLY your wallpaper behind the widget (no extra stars, nebula or constellation)
+const CELESTIAL_STYLE = "earthmoon"               // day / night: "earth" = Earth alone, sunlit face by day, night side with city lights at night; "earthmoon" = Earth + Moon, warm sunlit by day, cool night side at night; "sunmoon" = the usual Earth + Moon plus a small sun (day) or real-phase moon (night) in the top-right corner; "off" = as before
+const CELESTIAL_BASIS = "now"                     // "now" = day or night by the Singapore clock when the widget refreshes; "reset" = by the time of day of the next reset
+const DAY_START_HOUR = 8                          // day starts at 8:00 am (Singapore time)
+const DAY_END_HOUR = 20                           // night starts at 8:00 pm (Singapore time)
+const TWILIGHT_MIN = 30                           // dawn and dusk blend over this many minutes either side of the switch (07:30-08:30 and 19:30-20:30); 0 = hard switch
+const SPARKLE_DAY_DIM = 0.45                      // background sparkles are this much dimmer in the daytime (0 = same as night); the 7 named stars never change
+const STAR_DESIGN = "C"                           // the 7 day-stars: "C" = realistic 8-point telescope star (4 long spikes + 4 short faint diagonals, white-hot core, Airy glow); "D" = 8 equal spikes; "A" = crisp point with a tiny 4-point diffraction cross; "B" = JWST-style 6-point spikes; "classic" = the earlier plain points and colours
+const CITY_BOOST = 1                              // night-side city lights: 1 = on (look set by CITY_LOOK); 0 = the original lights
+const CITY_LOOK = "natural"                       // "natural" = fine amber specks like NASA Black Marble, only on the night side, off in the daytime, almost no glow; "bright" = the stronger v3 lights
+const DAY_TZ_OFFSET_H = 8                         // Singapore is UTC+8, so the window stays on Singapore time even if the phone is abroad
 const TAP_URL = "https://grok.com"                          // opens the Grok app; if nothing happens try "https://grok.com" (opens the app via link) or "" for Scriptable
 // ==================================================
 
@@ -1131,7 +1141,7 @@ function earthSurface(R, s, f, o) {
     if (geo > 0.05) { const q = norm3([b[0] + 0.03 * Sb[0], b[1] + 0.03 * Sb[1], b[2] + 0.03 * Sb[2]]); shd[p] = cloudAt(q, la, lo, drift, false, -0.1 * wet * land) }
     inside[p] = 1
   }
-  const px = new Uint8Array(NN * 4), nlight = EFFECTS, pad = PAD.earth
+  const px = new Uint8Array(NN * 4), nlight = EFFECTS, pad = PAD.earth, CB = CEL_ON ? CITY_BOOST : 0, NAT = CB > 0 && CITY_LOOK === "natural", glowL = CB > 0 ? new Float32Array(NN) : null
   const HV = norm3([LIGHT[0], LIGHT[1], LIGHT[2] + 1])
   for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
     const x = (i + 0.5 - c0) / k, y = (j + 0.5 - c0) / k, rr = Math.sqrt(x * x + y * y), p = j * N + i
@@ -1189,18 +1199,24 @@ function earthSurface(R, s, f, o) {
           dc = [dc[0] * g + 255 * rim * 0.9, dc[1] * g * (1 - 0.1 * DRIFT_W * dw) + 150 * rim * 0.9, dc[2] * g * (1 - 0.32 * DRIFT_W * dw) + 60 * rim * 0.9]
         }
       }
+      if (CEL_ON && EM_TWI > 0.01) {                       // dawn / dusk: a soft orange band where day meets night (sunlight through the long slant of air)
+        const band = Math.exp(-Math.pow((geo - 0.03) / 0.09, 2)) * EM_TWI * (1 - 0.45 * ca) * sstep(-0.12, 0.02, geo)   // soft, mostly on the lit side of the line
+        dc = [dc[0] + 78 * band, dc[1] + 34 * band, dc[2] + 10 * band]
+      }
       if (nlight && night > 0.2 && z > 0.08) {
         const bb = viewToBody([x, y, z], o)
-        const nl = sstep(0.03, -0.2, geo) * (1 - 0.85 * ca)          // lights fade toward the terminator, vanish on the day side, and hide under cloud
+        const nl = (NAT ? sstep(-0.05, -0.24, geo) * CITY_NIGHT : sstep(0.03, -0.2, geo)) * (1 - 0.85 * ca)   // lights fade in across the terminator, are fully off on every sunlit pixel (natural: also off in the 8am-8pm daytime), and hide under cloud
         const Dl = lit[p]
         if (nl > 0.01 && Dl > 1.5e-4 && om[p] < 0.98) {
           const F = k * 1.25, f1 = vnoise3(bb[0] * F + 1, bb[1] * F, bb[2] * F + 3), f2 = vnoise3(bb[0] * F * 0.43 + 5, bb[1] * F * 0.43, bb[2] * F * 0.43 + 2)
           const f3 = vnoise3(bb[0] * 22 + 9, bb[1] * 22, bb[2] * 22 + 4), Dm = Math.min(Math.sqrt(Dl) * 1.5, 1.3)
-          const thr = 0.97 - 0.42 * Math.pow(Dm, 0.7), pt = sstep(thr, thr + 0.05, f1 * 0.62 + f2 * 0.18 + f3 * 0.2)
-          let L = pt * (0.25 + 0.5 * Dm) * (0.6 + 0.8 * f2) + 0.16 * Math.pow(Dm, 1.7) * (0.55 + 0.9 * f3)
-          L = Math.min(L * nl * CITY_GAIN, 1.15)
+          const thr = 0.97 - (0.42 + (NAT ? 0.025 : 0.07) * CB) * Math.pow(Dm, 0.7), pt = sstep(thr, thr + (NAT ? 0.035 : 0.05), f1 * 0.62 + f2 * 0.18 + f3 * 0.2)
+          let L = pt * (0.25 + 0.5 * Dm) * (0.6 + 0.8 * f2) + (NAT ? 0.08 : 0.16) * Math.pow(Dm, 1.7) * (0.55 + 0.9 * f3)   // natural: sharp specks, less diffuse wash (no blobs)
+          L = Math.min(L * nl * CITY_GAIN * (1 + (NAT ? 0.15 : 0.55) * CB), NAT ? 1.0 : 1.15 + 0.2 * CB)
           const q = Math.min(L, 1)
-          dc = [dc[0] + 255 * L, dc[1] + (170 + 60 * q) * L, dc[2] + (80 + 110 * q * q) * L]
+          if (NAT) { dc = [dc[0] + 255 * L, dc[1] + (168 + 40 * q) * L, dc[2] + (72 + 60 * q * q) * L]; glowL[p] = L * z }   // sodium amber, whiter in the densest cores
+          else if (CB > 0) { dc = [dc[0] + 255 * L, dc[1] + (178 + 46 * q) * L, dc[2] + (70 + 70 * q * q) * L]; glowL[p] = L * z }   // warmer gold; remembered for the glow pass
+          else dc = [dc[0] + 255 * L, dc[1] + (170 + 60 * q) * L, dc[2] + (80 + 110 * q * q) * L]
         }
         const dN = bb[0] * MAGN[0] + bb[1] * MAGN[1] + bb[2] * MAGN[2], th1 = Math.acos(clamp(dN, -1, 1)) / d2r, th2 = Math.acos(clamp(-dN, -1, 1)) / d2r, tm = Math.min(th1, th2)
         if (tm < 36 && tm > 8) {                              // auroral ovals sit around the magnetic poles, patchy and faint
@@ -1215,6 +1231,18 @@ function earthSurface(R, s, f, o) {
     if (A <= 0.002) continue
     for (let ch = 0; ch < 3; ch++) px[p * 4 + ch] = clamp(Math.round((dc[ch] * edge + ac[ch] * (1 - edge) * aa) / A), 0, 255)
     px[p * 4 + 3] = Math.round(255 * A)
+  }
+  if (glowL) {                                          // city glow: the lights blurred a few pixels and added back as a warm haze, so clusters read at small widget size
+    const rad = NAT ? 1 : Math.max(2, Math.round(N * 0.011)), tmp = new Float32Array(NN), gl = new Float32Array(NN)
+    for (let j = 0; j < N; j++) { let acc = 0; for (let i = -rad; i < N + rad; i++) { if (i + rad < N) acc += glowL[j * N + i + rad] || 0; if (i - rad - 1 >= 0) acc -= glowL[j * N + i - rad - 1]; if (i >= 0 && i < N) tmp[j * N + i] = acc / (2 * rad + 1) } }
+    for (let i = 0; i < N; i++) { let acc = 0; for (let j = -rad; j < N + rad; j++) { if (j + rad < N) acc += tmp[(j + rad) * N + i]; if (j - rad - 1 >= 0) acc -= tmp[(j - rad - 1) * N + i]; if (j >= 0 && j < N) gl[j * N + i] = acc / (2 * rad + 1) } }
+    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+      const p = j * N + i, x = (i + 0.5 - c0) / k, y = (j + 0.5 - c0) / k
+      if (x * x + y * y >= 1 || px[p * 4 + 3] === 0) continue
+      const g = Math.min(NAT ? 0.25 : 1, gl[p] * (NAT ? 0.55 : 2.6) * CB)   // natural: only a whisper of glow around the brightest cores
+      if (g < 0.004) continue
+      px[p * 4] = Math.min(255, px[p * 4] + 255 * g * 0.62); px[p * 4 + 1] = Math.min(255, px[p * 4 + 1] + 160 * g * 0.62); px[p * 4 + 2] = Math.min(255, px[p * 4 + 2] + 60 * g * 0.62)
+    }
   }
   return { img: pngFromRGBA(px, N, N), size: N / s }
 }
@@ -1577,12 +1605,61 @@ function driftFace(ctx, W, H, kind, key, file, N, size, cx, cy, make) {
   }
   ctx.drawImageInRect(img, new Rect(cx - size / 2, cy - size / 2, size, size))
 }
-const EM_SUN = unit3v([0.95, -0.3, -0.04])                 // where the (off-screen) Sun is: to the right and a little above, so Earth is half lit and half night
+// ---- day / night (CELESTIAL_STYLE) ----
+const CEL_T = CELESTIAL_BASIS === "reset" ? nextReset.getTime() : now.getTime()
+const CEL_HOUR = (((CEL_T / 3600000 + DAY_TZ_OFFSET_H) % 24) + 24) % 24   // Singapore clock time (hours, with minutes as a fraction)
+const IS_DAY = CEL_HOUR >= DAY_START_HOUR && CEL_HOUR < DAY_END_HOUR      // day = 08:00 up to 19:59, night = 20:00 up to 07:59
+const DAYK = (() => {                                                     // 0 = full night, 1 = full day, smooth in between around dawn and dusk (exactly 0.5 at 08:00 and 20:00)
+  const tw = Math.max(1e-6, TWILIGHT_MIN / 60), h = CEL_HOUR
+  const up = sstep(DAY_START_HOUR - tw, DAY_START_HOUR + tw, h), down = 1 - sstep(DAY_END_HOUR - tw, DAY_END_HOUR + tw, h)
+  return CELESTIAL_BASIS === "reset" || TWILIGHT_MIN <= 0 ? (IS_DAY ? 1 : 0) : Math.min(up, down)
+})()
+const EM_TWI = 1 - Math.abs(2 * DAYK - 1)                                 // 1 right at dawn / dusk, 0 in full day or night
+const CITY_NIGHT = 1 - sstep(0.75, 0.95, DAYK)                               // city lights: full at night, switching on through dusk (about half by 19:45) and off through dawn; none at all in full daytime
+const CEL_ON = CELESTIAL_STYLE === "earth" || CELESTIAL_STYLE === "earthmoon"
+const EM_SUN = !CEL_ON ? unit3v([0.95, -0.3, -0.04])
+  : CELESTIAL_STYLE === "earth" ? unit3v([0.3 * DAYK + 0.34 * (1 - DAYK), -0.24 * DAYK - 0.2 * (1 - DAYK), 0.92 * DAYK - 0.92 * (1 - DAYK)])     // day: the Sun is behind you, Earth's sunlit face fills the disc; night: the Sun is behind Earth, its night side faces you with a thin bright rim
+  : unit3v([0.62 * DAYK + 0.66 * (1 - DAYK), -0.32 * DAYK - 0.3 * (1 - DAYK), 0.72 * DAYK - 0.69 * (1 - DAYK)])   // dawn / dusk: the Sun swings round, so Earth is half lit with the terminator in view                                 // Earth + Moon: the same idea, turned a little so the Moon's lap stays in view
+const MOON_SYN = 29.530588853, MOON_NEW0 = Date.UTC(2000, 0, 6, 18, 14)
+function moonAge(tMs) { return (((tMs - MOON_NEW0) / 86400000) % MOON_SYN + MOON_SYN) % MOON_SYN }   // days since new moon (about 0.3 day accurate)
+function celPos(W, H) { return [W - 0.2 * H, 0.2 * H] }    // the sun / moon sits in the top-right corner, inside the rounded edge
+function celestialIcon(ctx, W, H, u) {                       // a small warm sun by day, the real-phase moon at night; one RGBA image, dimmer than the named stars' cores
+  try {
+    const [cx, cy] = celPos(W, H), sc = Math.max(2, Math.round(Device.screenScale())), R = (IS_DAY ? 4.4 : 4.8) * u, Rb = R * (IS_DAY ? 3.4 : 2.4)
+    const N = Math.ceil(2 * Rb * sc), h = N / 2, px = new Uint8Array(N * N * 4), ss = 3
+    const age = moonAge(CEL_T), ph = 2 * Math.PI * age / MOON_SYN, waxing = age < MOON_SYN / 2
+    const Lx = (waxing ? 1 : -1) * Math.abs(Math.sin(ph)) * Math.cos(0.5), Ly = Math.abs(Math.sin(ph)) * Math.sin(0.5), Lz = -Math.cos(ph)
+    const illum = (1 - Math.cos(ph)) / 2
+    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+      let r0 = 0, g0 = 0, b0 = 0, a0 = 0
+      for (let sy = 0; sy < ss; sy++) for (let sx = 0; sx < ss; sx++) {
+        const x = ((i + (sx + 0.5) / ss) - h) / (sc * R), y = ((j + (sy + 0.5) / ss) - h) / (sc * R), rr = Math.hypot(x, y)
+        let cr = 0, cg = 0, cb = 0, ca = 0
+        if (IS_DAY) {
+          if (rr < 1) { const mu = Math.sqrt(1 - rr * rr), I = 0.62 + 0.38 * mu; cr = 255; cg = 184 + 56 * mu; cb = 92 + 110 * mu * mu; ca = 0.88 * I }
+          else { const d = rr - 1, ray = 0.82 + 0.18 * Math.cos(Math.atan2(y, x) * 8 + 0.6) * Math.exp(-d * 0.8); ca = (0.26 * Math.exp(-d * 2.6) + 0.07 * Math.exp(-d * 0.75)) * ray * (1 - sstep(0.7, 1, rr / (Rb / R))); cr = 255; cg = 176; cb = 88 }
+        } else {
+          if (rr < 1) {
+            const z = Math.sqrt(1 - rr * rr), dl = x * Lx + y * Ly + z * Lz, t = sstep(-0.04, 0.1, dl)
+            const m = 0.86 + 0.14 * sv2(x * 2.2 + 4, y * 2.2 + 4, 7) - 0.12 * sstep(0.45, 0.7, sv2(x * 1.5 + 9, y * 1.5 + 2, 3))   // soft maria
+            const v = (0.55 + 0.45 * Math.sqrt(Math.max(0, dl))) * m
+            cr = 236 * v * t + 66 * (1 - t); cg = 232 * v * t + 78 * (1 - t); cb = 222 * v * t + 100 * (1 - t); ca = t * 0.92 + (1 - t) * 0.09      // earthshine: the dark part is a faint cool grey
+          } else { const d = rr - 1; ca = (0.035 + 0.13 * illum) * Math.exp(-d * 2.4) * (1 - sstep(0.6, 1, rr / (Rb / R))); cr = 196; cg = 212; cb = 240 }
+        }
+        r0 += cr * ca; g0 += cg * ca; b0 += cb * ca; a0 += ca
+      }
+      const n = ss * ss, a = a0 / n, q = (j * N + i) * 4
+      if (a <= 0) continue
+      px[q] = Math.min(255, r0 / a0); px[q + 1] = Math.min(255, g0 / a0); px[q + 2] = Math.min(255, b0 / a0); px[q + 3] = Math.min(255, Math.floor(a * 255 + Math.random()))
+    }
+    ctx.drawImageInRect(pngFromRGBA(px, N, N), new Rect(cx - Rb, cy - Rb, 2 * Rb, 2 * Rb))
+  } catch (err) { console.log("sun / moon skipped: " + err) }
+}                 // where the (off-screen) Sun is: to the right and a little above, so Earth is half lit and half night
 function drawDrift(ctx, W, H, family, u) {
   const med = family === "medium", sc = Device.screenScale()
   const slot = Math.floor(now.getTime() / 600000), tms = slot * 600000            // the scene is re-posed every 10 minutes
   const hrs = ((tms - prevReset.getTime()) / 3600000 % T_HRS + T_HRS) % T_HRS
-  DRIFT_W = 0
+  DRIFT_W = CEL_ON ? (CELESTIAL_STYLE === "earth" ? 0.35 : 0.5) * DAYK : 0
   // layout (screen points): Earth is big, the Moon laps it; sizes are constant, the Moon is 0.2727 of Earth (real 3475 : 12742 km)
   const Re = (med ? 48 : 35) * u, rm = 0.2727, orb = med ? 1.9 : 1.8
   const ex = W / 2, ey = H / 2                       // Earth is dead centre of the widget; the Moon's orbit is centred on it
@@ -1614,20 +1691,20 @@ function drawDrift(ctx, W, H, family, u) {
     LIGHT = Se
     DRIFT_MS = EFFECT_ECLIPSE ? { M, rm, S: Se } : null     // the Moon's shadow on Earth (solar eclipse), off unless EFFECT_ECLIPSE
     const ss = EARTH_SS, Rt = Re * 1.08, N = surfN(Rt, sc * ss, "earth"), size = N / (sc * ss) * (Re / Rt)
-    const key = `em5-e-${N}-${slot}-${Math.round(M[0] * 20)}_${Math.round(M[1] * 20)}_${Math.round(M[2] * 20)}`
+    const key = `em7-e-${CELESTIAL_STYLE}${Math.round(DAYK * 40)}c${CITY_BOOST}${CITY_LOOK}-${N}-${slot}-${Math.round(M[0] * 20)}_${Math.round(M[1] * 20)}_${Math.round(M[2] * 20)}`
     driftFace(ctx, W, H, "earth", key, "grok-em-earth.png", N, size, ex, ey, () => earthSurface(Rt, sc * ss, 0.6, earthO).img)
     DRIFT_MS = null
     if (SG_GLOW) {                                                       // Singapore marker: a tiny hot white core in a soft reddish halo, round, no spikes; only on the visible hemisphere
       const la = 1.35 * d2r, v = bodyToView([0, -Math.sin(la), Math.cos(la)], earthO), vis = sstep(0.1, 0.5, v[2])
       if (vis > 0.01) {
-        const day = sstep(-0.1, 0.25, dot3(v, Se)), k = vis * (1 - day)   // a city light: only on the night side
+        const sd = dot3(v, Se), NATs = CITY_LOOK === "natural", k = vis * (NATs ? sstep(-0.05, -0.24, sd) * CITY_NIGHT : 1 - sstep(-0.1, 0.25, sd)), CBs = NATs ? 0 : CITY_BOOST   // a city light: only on the night side
         const gx = ex + v[0] * Re, gy = ey + v[1] * Re, sq = 0.45 + 0.55 * v[2]    // the halo is squashed a little toward the limb
         for (let i = 0; i < 9; i++) {
-          const f = 1 - i / 9, r = 3.0 * u * f * f * 0.9 + 0.5 * u
-          ctx.setFillColor(col("#ff4a3c", 0.04 * k))
+          const f = 1 - i / 9, r = (3.0 + 0.9 * CBs) * u * f * f * 0.9 + 0.5 * u
+          ctx.setFillColor(col("#ff4a3c", (0.04 + 0.022 * CBs) * k))
           ctx.fillEllipse(new Rect(gx - r * sq, gy - r, r * 2 * sq, r * 2))
         }
-        dot(ctx, gx, gy, 1.15 * u, "#ff9a86", 0.35 * k)
+        dot(ctx, gx, gy, (1.15 + 0.25 * CBs) * u, "#ff9a86", (0.35 + 0.15 * CBs) * k)
         dot(ctx, gx, gy, 0.55 * u, "#ffffff", 0.95 * k)
       }
     }
@@ -1636,11 +1713,16 @@ function drawDrift(ctx, W, H, family, u) {
     LIGHT = Lm
     DRIFT_ECL = EFFECT_ECLIPSE ? { E: [-M[0] / rm, -M[1] / rm, -M[2] / rm], S: Se, Re: 1 / rm } : null   // Earth's shadow on the Moon (lunar eclipse, red tint), off unless EFFECT_ECLIPSE
     const ss = 2, Rt = rm * Re * 1.08, N = Math.ceil(2 * Rt * sc * ss) + 2, size = N / (sc * ss) * (Re / (Re * 1.08))
-    const key = `em5-m-${N}-${slot}-${Math.round(Lm[0] * 50)}_${Math.round(Lm[1] * 50)}_${Math.round(Lm[2] * 50)}`
-    driftFace(ctx, W, H, "moon", key, "grok-em-moon.png", N, size, mx, my, () => moonSurface(Rt, sc * ss, clamp((1 + Lm[2]) / 2, 0.02, 1), "#CFC6B8", moonO, { tex: true, es: { k: kE, d: dE } }).img)
+    const key = `em6-m-${CELESTIAL_STYLE}${Math.round(DAYK * 40)}-${N}-${slot}-${Math.round(Lm[0] * 50)}_${Math.round(Lm[1] * 50)}_${Math.round(Lm[2] * 50)}`
+    driftFace(ctx, W, H, "moon", key, "grok-em-moon.png", N, size, mx, my, () => moonSurface(Rt, sc * ss, clamp((1 + Lm[2]) / 2, 0.02, 1), CEL_ON ? mixHex("#C2CAD8", "#D8C8AE", DAYK) : "#CFC6B8", moonO, { tex: true, es: { k: kE, d: dE } }).img)
     DRIFT_ECL = null
   }
-  if (M[2] < 0) { drawMoonBody(); drawEarth() } else { drawEarth(); drawMoonBody() }
+  if (CEL_ON) {                                                    // day: a faint warm glow around Earth; night: a faint cool blue one; dawn / dusk: a touch of orange
+    aura(ctx, ex, ey, "#5C86FF", Re * 1.5, 0.12 * (1 - DAYK), 0, 0)
+    aura(ctx, ex, ey, EM_TWI > 0.3 ? "#FF9A50" : "#FFB868", Re * 1.5, 0.07 * DAYK + 0.05 * EM_TWI, 0, 0)
+  }
+  if (CELESTIAL_STYLE === "earth") drawEarth()
+  else if (M[2] < 0) { drawMoonBody(); drawEarth() } else { drawEarth(); drawMoonBody() }
 }
 
 // ---------------- stars ----------------
@@ -1759,6 +1841,55 @@ const DAY_STARS = [
   ["#FFF0C4", 1.9, 5.6, 1],       // Eta Carinae: yellow-white, hot and unstable, wrapped in a faint nebula
   ["#9CBBFF", 2.6, 9.0, 1]        // R136a1: most massive known star, ~46,000 K: the most intense blue-white, the biggest
 ]
+const CORE_WHITE = 0.2                               // vivid palettes: how white the tiny core is (0 = pure colour, 0.5 = the v9 look)
+const LUMK_P = 1.0, LUMK_MIN = 0.65, LUMK_MAX = 6.0
+const STAR_TRIM = { vivid: [0.976, 1.095, 0.999, 1, 1.081, 1.436, 1], rainbow2: [0.924, 1.009, 0.933, 0.934, 1.151, 1.336, 0.998] }   // per-star fine trim, measured so all 7 give off the same light in the rendered widget                  // dark-hue lift: strength and cap
+const STAR_SIZE_LOCK = true                      // v11: every lit star has the exact same footprint (core, spikes, glow: one shared brightness profile, so the same alpha everywhere); brightness is matched only through each star's colour value (STAR_VAL) and lighter dark hues, never through size
+const STAR_AMP = 2.0                              // size-lock: the one shared star strength (sets the footprint for all 7)
+const STAR_VAL = { vivid: [0.997, 0.858, 1, 1, 0.774, 1, 0.911] }   // v12: yellow and green back at full vivid value (same footprint, just brighter colour)   // size-lock: per-star colour value (0..1), measured so the 7 give off about the same light without changing size; dark hues stay at 1 and are lightened in the palette instead
+const STAR_UNIFORM = true                         // true = all 7 stars share one shape, size and brightness (only the rainbow colour differs, with dark hues lifted so they look as bright), and the look does not change as stars go out; false = the older per-star sizes and the brighter-as-they-go-out steps
+const STAR_BRIGHT_RAMP = 1                         // as stars go out, the survivors grow brighter and more radiant (stronger core, longer brighter spikes, bigger coloured glow), built into the star itself so it stays crisp and keeps its colour: 0 = off (the older white-glow steps), 1 = normal, 1.5 = more dramatic
+const STAR_PALETTE = "vivid"                       // the 7 day colours, day 1 to day 7: "vivid" = red, orange, yellow, green, cyan, blue, magenta (hues spread evenly round the colour wheel, most distinct); "rainbow2" = red, orange, yellow, green, blue, indigo, violet, pushed apart; "rainbow" = the softer v7-v9 rainbow; "stellar" = colours loosely after each real star
+const STAR_VIVID = [
+  "#FF5050",   // day 1 · Proxima: red (0°), lightened a touch so it is as bright as the rest at the same size
+  "#FF8A00",   // day 2 · Sirius: orange (32°)
+  "#FFE800",   // day 3 · Rigel: yellow (55°)
+  "#14E650",   // day 4 · Antares: green (135°)
+  "#00C8FF",   // day 5 · Betelgeuse: cyan / sky (193°)
+  "#7C8CFF",   // day 6 · Eta Carinae: blue (235°), lightened so it is as bright as the rest at the same size
+  "#F060FF"    // day 7 · R136a1: magenta-violet (295°), lightened a touch
+]
+const STAR_RAINBOW2 = [
+  "#FF1E1E",   // red
+  "#FF8A00",   // orange
+  "#FFE800",   // yellow
+  "#14E650",   // green
+  "#1E78FF",   // blue (215°)
+  "#5A1EFF",   // indigo (255°)
+  "#D228FF"    // violet (285°)
+]
+const STAR_RAINBOW = [
+  "#FF3B30",   // day 1 · Proxima Centauri: red
+  "#FF8C1A",   // day 2 · Sirius: orange
+  "#FFE03A",   // day 3 · Rigel: yellow
+  "#3DDC5A",   // day 4 · Antares: green
+  "#2F7BFF",   // day 5 · Betelgeuse: blue
+  "#5B4BFF",   // day 6 · Eta Carinae: indigo
+  "#B05CFF"    // day 7 · R136a1: violet
+]
+// one clear colour per day (loosely after the real star), used by the "A" / "B" / "C" / "D" designs: every day of the week reads differently at a glance
+const STAR_STELLAR = [
+  "#FF2E3F",   // day 1 · Proxima Centauri: deep crimson red dwarf
+  "#D8F0FF",   // day 2 · Sirius: ice white-blue
+  "#4C86FF",   // day 3 · Rigel: blue supergiant
+  "#FF6A1F",   // day 4 · Antares: fiery orange-red
+  "#FFC03A",   // day 5 · Betelgeuse: amber gold
+  "#FF4FC4",   // day 6 · Eta Carinae: magenta-pink, after its glowing nebula
+  "#8C66FF"    // day 7 · R136a1: violet, the hottest and most extreme
+]
+const STAR_COLORS = STAR_PALETTE === "vivid" ? STAR_VIVID : STAR_PALETTE === "rainbow2" ? STAR_RAINBOW2 : STAR_PALETTE === "rainbow" ? STAR_RAINBOW : STAR_STELLAR
+const STAR_PURE = STAR_PALETTE === "vivid" || STAR_PALETTE === "rainbow2"   // the hue shows in the core and the spikes too, not just the glow
+if (STAR_DESIGN !== "classic") STAR_COLORS.forEach((c, i) => { DAY_STARS[i][0] = c })   // the glows, swell and haze all follow the star's own colour
 // The 7 day-stars zig-zag across the widget, alternating the top and bottom band from left to right (a loose, jittered path of the week, clear of Earth, its Moon orbit and the edges). Positions are fractions of the widget [x, y].
 // Countdown: all 7 stars are lit after the weekly reset and one goes out each day (R136a1 first, Proxima last): lit stars = days left. A star that has gone out is only a tiny faint dot.
 const STAR_POS = {
@@ -1777,6 +1908,7 @@ const RAMP_SHARE = 0.55                                          // the 24 h ram
 const SWELL = leftMs <= 10800000 ? RAMP_SHARE + (1 - RAMP_SHARE) * SWELL_RAW : SINCE_MIN < 30 ? SWELL_RAW : RAMP_SHARE * RAMP   // 0..1, continuous: 0 at 24 h left -> 0.55 at 3 h -> 1 at the reset -> settles to 0 within 30 min
 const LIT_N = CYCLE_DAYS - Math.min(CYCLE_DAYS - 1, Math.floor(SINCE_MS / 86400000))   // stars still lit: 7 right after the reset, 1 on the last day
 const STEP = CYCLE_DAYS - LIT_N                                  // 0 with 7 lit .. 6 with 1 lit
+const BRT = STAR_BRIGHT_RAMP > 0 ? (STAR_UNIFORM ? 0.5 * STAR_BRIGHT_RAMP * Math.pow(STEP / (CYCLE_DAYS - 1), 0.72) : STAR_BRIGHT_RAMP * Math.pow(STEP / (CYCLE_DAYS - 1), 1.2)) : 0   // uniform: tuned so each star that goes out adds the same amount of light (~+20% of the 7-lit look per step, about 2.2x the light at 1 lit with RAMP 1)   // 0 with 7 lit .. STAR_BRIGHT_RAMP with 1 lit, easing in so the last star is clearly the brightest
 const BOOST = (CYCLE_DAYS - LIT_N) / (CYCLE_DAYS - 1)              // 0 with 7 lit .. 1 with 1 lit: each star that goes out makes the survivors a step brighter (and a touch bigger), applied at draw time
 const SWELL_K = 0.7                                                  // size at the peak = 1 + SWELL_K, the same for every star
 const PULSE_PERIOD = 780                                            // seconds per breath (13 min): slower than the ~10 min refresh, so each refresh lands on a different phase
@@ -1801,6 +1933,11 @@ function aura(ctx, x, y, hex, R, amp, wob, seed) {                  // a soft ro
 }
 // per star: [brightness weight, size]; the colours come from DAY_STARS
 const STAR_PH = [[1.25, 1.05], [1, 1], [0.95, 1], [0.95, 1.05], [1, 1.05], [0.95, 1.05], [1.25, 1.3]]
+if (STAR_UNIFORM) for (let i = 0; i < STAR_PH.length; i++) { STAR_PH[i] = [1.08, 1.08]; DAY_STARS[i][1] = 1.8; DAY_STARS[i][2] = 5.4; DAY_STARS[i][3] = 1 }   // one shape, size and brightness for every star
+// equal perceived brightness: a dark hue (red, blue, indigo) carries less light than yellow or green at the same strength, so its star is drawn a little stronger and its core a touch whiter
+const STAR_Y = DAY_STARS.map((s) => { const c = rgb(s[0]).map((v) => Math.pow(v / 255, 2.2)), m = Math.max(...c); return (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) / m })
+const STAR_LUMK = STAR_Y.map((y) => STAR_UNIFORM ? clamp(Math.pow(0.5 / Math.max(y, 0.05), LUMK_P), LUMK_MIN, LUMK_MAX) : 1)
+const STAR_CW = STAR_Y.map((y) => STAR_UNIFORM ? 0.22 * clamp((0.5 - y) / 0.4, 0, 1) : 0)
 const SPR = Math.max(2, Math.round(Device.screenScale()))   // star sprite pixels per point: one sprite pixel is one device pixel, so the cores stay crisp
 function sn2(ix, iy, s) { let h = (Math.imul(ix, 374761393) + Math.imul(iy, 668265263) + Math.imul(s, 2246822519)) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296 }
 function sv2(x, y, s) {                                // smooth 2D value noise
@@ -1811,18 +1948,46 @@ function sv2(x, y, s) {                                // smooth 2D value noise
 // A crisp point star, built per pixel at device resolution: a tiny white-hot core, a tight halo in the star's own colour and a very small faint skirt. No spikes, no big soft blobs.
 // A star whose day has not come is just one tiny, very faint dot in its colour.
 function starSprite(i, on, u, last, big) {
+  const BT = on ? BRT : 0                                                        // brightness ramp level (0 with all 7 lit)
   const [b, k] = STAR_PH[i], g = k * u * (big ? 1.3 : 1.1)                       // pinpoint scale, matched to the wallpaper's own stars (a few device pixels across)
   const T = rgb(DAY_STARS[i][0]).map((v) => v / 255), mx = Math.max(...T), tn = T.map((v) => v / mx)
-  const cc = tn.map((v) => v + (1 - v) * 0.6), pc = tn.map((v) => v + (1 - v) * 0.12), hc = tn.map((v) => Math.pow(v, 1.4))   // saturated: the core is only a little whitened, the halo is the star's own colour
-  const rc = (on ? 0.42 : 0.2) * g, rp = (on ? 1.2 : 0.8) * g, rh = 2.4 * g, Rm = on ? 6.5 * g : 1.6 * g   // a lit star: a clear 3-4 device-pixel core and a small halo; a gone-out star: a barely-there dim dot
-  const N = Math.max(8, Math.round(2 * Rm * SPR)), px = new Uint8Array(N * N * 4), c0 = N / 2, d = 1 / SPR, amp = on ? b * DAY_STARS[i][3] : 0.1, E = [0, 0, 0]
+  const S8 = STAR_DESIGN === "C" || STAR_DESIGN === "D", NEW = S8 || STAR_DESIGN === "A" || STAR_DESIGN === "B"
+  // C / D: a white-hot core, the day's colour lives in the glow and the spikes
+  const cc = tn.map((v) => v + (1 - v) * (S8 ? (STAR_PURE ? CORE_WHITE + (STAR_SIZE_LOCK ? 0 : 0.5 * STAR_CW[i]) : STAR_PALETTE === "rainbow" ? 0.5 + STAR_CW[i] : 0.7) : NEW ? 0.38 : 0.6)), pc = tn.map((v) => v + (1 - v) * (STAR_PURE ? 0.03 : 0.12)), hc = tn.map((v) => Math.pow(v, 1.4))   // saturated: the core is only a little whitened, the halo is the star's own colour
+  const rc = (on ? (S8 ? 0.36 : 0.42) : 0.2) * g * (1 + 0.16 * BT), rp = (on ? 1.2 : 0.8) * g * (1 + 0.2 * BT), rh = 2.4 * g * (1 + 0.5 * BT), Rm = (on ? (S8 ? 9 : NEW ? 7.5 : 6.5) * g : 1.6 * g) * (1 + 0.6 * BT)
+  // diffraction spikes (lit stars only): hair-thin (about one device pixel), short, fading to nothing; the longer the star's spike value, the longer its spikes
+  const Q = Math.PI / 4, SPK = !(on && NEW) ? [] : STAR_DESIGN === "A" ? [[0, 1, 1], [2 * Q, 1, 1]]
+    : STAR_DESIGN === "C" ? [[0, 1.12, 1], [2 * Q, 1.12, 1], [Q, 0.6, 0.62], [3 * Q, 0.6, 0.62]]     // C: 4 long primary spikes + 4 shorter, fainter diagonals (a camera lens / refractor with a 4-vane spider and its secondary)
+    : STAR_DESIGN === "D" ? [[0, 0.86, 0.8], [Q, 0.86, 0.8], [2 * Q, 0.86, 0.8], [3 * Q, 0.86, 0.8]]  // D: 8 equal spikes
+    : [[Math.PI / 2, 1, 1], [Math.PI / 2 + Math.PI / 3, 0.82, 1], [Math.PI / 2 - Math.PI / 3, 0.82, 1], [0, 0.42, 1]]   // [angle of the line through the centre, relative length, relative strength]   // [angle of the line through the centre, relative length]; B: 6 main spikes + the faint short horizontal pair, like Webb
+  const Ls = (2.6 + 0.4 * DAY_STARS[i][2]) * g * (1 + 0.65 * BT), ws = Math.max(0.42 / SPR * 2.2, 0.2 * g), ringR = 2.05 * g, ringW = 0.32 * g   // a lit star: a clear 3-4 device-pixel core and a small halo; a gone-out star: a barely-there dim dot
+  const N = Math.max(8, Math.round(2 * Rm * SPR)), px = new Uint8Array(N * N * 4), c0 = N / 2, d = 1 / SPR, amp = on ? b * DAY_STARS[i][3] * (1 + 0.4 * BT) * (STAR_SIZE_LOCK ? STAR_AMP : STAR_LUMK[i] * ((STAR_TRIM[STAR_PALETTE] || [])[i] || 1)) : 0.1, E = [0, 0, 0], VL = on && STAR_SIZE_LOCK ? ((STAR_VAL[STAR_PALETTE] || [])[i] || 1) : 1   // size-lock: the same strength for all 7, so the footprint is identical; VL only scales the colour value
   for (let j = 0; j < N; j++) for (let i2 = 0; i2 < N; i2++) {
     const dx = (i2 + 0.5 - c0) * d, dy = (j + 0.5 - c0) * d, r2 = dx * dx + dy * dy, rr0 = Math.sqrt(r2)
     if (rr0 >= N * d / 2) continue
     const win = 1 - sstep(0.55, 1, rr0 / (N * d / 2))
     for (let ch = 0; ch < 3; ch++) {
-      E[ch] = amp * (on ? 1.7 * Math.exp(-0.5 * r2 / (rc * rc)) * cc[ch] + 0.3 * Math.pow(1 + r2 / (rp * rp), -1.9) * pc[ch] + 0.045 * Math.pow(1 + r2 / (rh * rh), -1.6) * hc[ch]
+      E[ch] = amp * (on ? 1.7 * Math.exp(-0.5 * r2 / (rc * rc)) * cc[ch] + 0.3 * Math.pow(1 + r2 / (rp * rp), -1.9) * pc[ch] + 0.045 * (1 + 1.6 * BT) * Math.pow(1 + r2 / (rh * rh), -1.6) * hc[ch]
         : Math.exp(-0.5 * r2 / (rc * rc)) * 0.55 * tn[ch]) * win
+    }
+    if (SPK.length) {                                    // the spikes and a thin coloured ring, on top of the point
+      let sp = 0, spT = 0
+      for (const [a, lf, sg] of SPK) {
+        const ca = Math.cos(a), sa = Math.sin(a), al = Math.abs(dx * ca + dy * sa), pe = Math.abs(-dx * sa + dy * ca), L = Ls * lf
+        if (al >= L) continue
+        if (S8) {                                          // a real diffraction spike: thinnest at the tip, a power-law fall-off with a soft taper, faint beading along its length
+          const t = al / L, w = ws * (1.15 - 0.45 * t), v = sg * Math.exp(-0.5 * (pe / w) * (pe / w)) * Math.pow(1 - t, 1.6) / (1 + al / (0.9 * g)) * (1 + 0.14 * Math.cos(al / (0.55 * g) * 6.283)) * sstep(0.3 * rc, 1.2 * rc, al)
+          sp += v; spT += v * t
+        } else sp += Math.exp(-0.5 * (pe / ws) * (pe / ws)) * Math.pow(1 - al / L, 2.2) * sstep(0.35 * rc, 1.4 * rc, al)
+      }
+      if (S8) {                                            // Airy-like glow: a faint first ring and a soft wing, in the day's colour; the spikes go from warm white near the core to the full colour at the tips
+        const airy = Math.exp(-0.5 * Math.pow((rr0 - 1.55 * g) / (0.26 * g), 2)) * 0.06 + Math.exp(-0.5 * Math.pow((rr0 - 2.6 * g) / (0.3 * g), 2)) * 0.022 + Math.exp(-0.5 * r2 / Math.pow(0.95 * g * (1 + 0.55 * BT), 2)) * 0.16 * (1 + 1.1 * BT)   // + a soft coloured wing round the white core
+        const tt = sp > 1e-6 ? Math.min(1, (STAR_PURE ? 0.75 : 0.25) + spT / sp * 2.4) : 0   // vivid: the spikes carry the full colour almost from the core
+        for (let ch = 0; ch < 3; ch++) E[ch] += amp * (1.05 * (1 + 0.75 * BT) * sp * (cc[ch] * (1 - tt) + hc[ch] * tt) + airy * hc[ch]) * win
+      } else {
+        const ring = Math.exp(-0.5 * Math.pow((rr0 - ringR) / ringW, 2)) * 0.075
+        for (let ch = 0; ch < 3; ch++) E[ch] += amp * (0.7 * sp * pc[ch] + ring * hc[ch]) * win
+      }
     }
     let m = E[0] > E[1] ? (E[0] > E[2] ? E[0] : E[2]) : (E[1] > E[2] ? E[1] : E[2]); const q = (j * N + i2) * 4
     if (m < 0.0008) continue
@@ -1830,7 +1995,7 @@ function starSprite(i, on, u, last, big) {
     for (let c2 = 0; c2 < 3; c2++) E[c2] *= tm
     m *= tm
     const al = Math.min(1, m)
-    px[q] = Math.min(255, Math.round(E[0] / m * 255)); px[q + 1] = Math.min(255, Math.round(E[1] / m * 255)); px[q + 2] = Math.min(255, Math.round(E[2] / m * 255))
+    px[q] = Math.min(255, Math.round(E[0] / m * 255 * VL)); px[q + 1] = Math.min(255, Math.round(E[1] / m * 255 * VL)); px[q + 2] = Math.min(255, Math.round(E[2] / m * 255 * VL))
     px[q + 3] = Math.min(255, Math.floor(al * 255 + Math.random()))
   }
   return { img: pngFromRGBA(px, N, N), R: N * d / 2 }
@@ -1838,7 +2003,7 @@ function starSprite(i, on, u, last, big) {
 function dayStar(ctx, x, y, i, on, u, big, ks) { try { dayStar1(ctx, x, y, i, on, u, big, ks || 1) } catch (err) { console.log("star " + i + " skipped: " + err) } }
 function dayStar1(ctx, x, y, i, on, u, big, ks) {                 // the sprite is cached per star in two states (lit or not yet), so it is only ever re-made when a star's day arrives
   const last = i === CYCLE_DAYS - 1
-  const key = `em9-s-${i}-${Math.round(u * 100)}-${on ? 1 : 0}-${big ? 1 : 0}-${SPR}`, path = fm.joinPath(fm.documentsDirectory(), `grok-em-star${i}${big ? "s" : "m"}.png`), kp = path + ".key"
+  const key = `em16-s-${STAR_DESIGN}${STAR_PALETTE}${CORE_WHITE}${STAR_SIZE_LOCK ? "L" + STAR_AMP + "_" + ((STAR_VAL[STAR_PALETTE] || []).join("_")) + STAR_COLORS.join("") : ""}${STAR_UNIFORM ? "u" + LUMK_P + "_" + LUMK_MIN + "_" + LUMK_MAX : ""}-b${on ? Math.round(BRT * 100) : 0}-${i}-${Math.round(u * 100)}-${on ? 1 : 0}-${big ? 1 : 0}-${SPR}`, path = fm.joinPath(fm.documentsDirectory(), `grok-em-star${i}${big ? "s" : "m"}.png`), kp = path + ".key"
   let img = null, R = 0
   try {
     if (fm.fileExists(path) && fm.fileExists(kp)) { const [k0, r0] = fm.readString(kp).split("|"); if (k0 === key) { img = fm.readImage(path); R = parseFloat(r0) } }
@@ -1878,8 +2043,9 @@ function freeSkyCalc(W, H, med, u, tight) {
     if (X - cell / 2 < inset || X + cell / 2 > W - inset || Y - cell / 2 < inset || Y + cell / 2 > H - inset) continue
     if (tight) { const ex2 = Math.max(0, Math.abs(X - W / 2) - (W / 2 - inset - Rc)), ey2 = Math.max(0, Math.abs(Y - H / 2) - (H / 2 - inset - Rc)); if (Math.hypot(ex2, ey2) > Rc) continue }
     if (Math.hypot(X - W / 2, Y - H / 2) < ecl) continue
+    if (CELESTIAL_STYLE === "sunmoon") { const cp2 = celPos(W, H); if (Math.hypot(X - cp2[0], Y - cp2[1]) < (tight ? 0.11 : 0.17) * H) continue }
     let near = false
-    if (!tight) for (let k = 0; k < 120; k++) if (Math.hypot(path[k][0] - X, path[k][1] - Y) < clr) { near = true; break }   // the named stars keep clear of the whole Moon path; the tiny sparkles only of the Moon itself (checked per sparkle)
+    if (!tight && CELESTIAL_STYLE !== "earth") for (let k = 0; k < 120; k++) if (Math.hypot(path[k][0] - X, path[k][1] - Y) < clr) { near = true; break }   // the named stars keep clear of the whole Moon path; the tiny sparkles only of the Moon itself (checked per sparkle)
     if (!near) ok[j * nx + i] = 1
   }
   const res = { ok, cell, nx, ny, mo: { Se, Qm, Re, orb } }
@@ -2008,7 +2174,7 @@ function sparkles(ctx, W, H, family, u, P) {
       x = mx + ddx * (ph - 0.5); y = my + ddy * (ph - 0.5)
       if (!got) continue
       placed.push([mx, my, ddx, ddy])                                            // reserve the spot even while it is faint, so spots never swap places
-      const lv = Math.floor(v * 5.2); if (lv < 0 || v < 0.12) continue
+      const vd = v * (CEL_ON ? 1 - SPARKLE_DAY_DIM * DAYK : 1), lv = Math.floor(vd * 5.2); if (lv < 0 || vd < 0.12) continue   // daytime: the dust fades back, the named stars stay
       const L = Math.min(4, lv), sr = sn2(k, j, 8107), gr = sn2(k, j, 8114), cr = sn2(k, j, 8115)
       const size = sr < 0.28 ? 0 : sr < 0.58 ? 1 : sr < 0.84 ? 2 : 3, glow = gr < 0.4 ? 0 : gr < 0.75 ? 1 : 2, cross = cr < 0.16 && size <= 1 && glow <= 1 && L >= 2 ? 1 : 0   // mixed at random per sparkle and per life
       const st = glow && sn2(k, j, 8116) < 0.5 ? 1 : 0, sp = sparkSprite(size, glow, cross, L, st), d = sp.N / SPR, cx = (Math.floor(x * sc) + 0.5) / sc, cy = (Math.floor(y * sc) + 0.5) / sc
@@ -2026,7 +2192,10 @@ function dayDots(ctx, W, H, family, u) {
   for (let i = 0; i < CYCLE_DAYS; i++) {
     const [x, y] = P[i], last = i === CYCLE_DAYS - 1, on = starLit(i), g = u * (big ? 1.3 : 1.1) * STAR_PH[i][1], g0 = STAR_PH[i][1]
     let ks = 1
-    if (on && STEP > 0) {                                       // each star that goes out makes every survivor one clear step brighter and bigger (7 lit = 1.0x, 1 lit = the brightest): a hotter, wider core and halo on top of the cached sprite, still a crisp point
+    if (STAR_UNIFORM) { if (on) ks = 1 + 0.02 * STEP * STAR_BRIGHT_RAMP } else if (on && STEP > 0 && STAR_BRIGHT_RAMP > 0) {   // uniform: no per-star extras; every lit star steps up together (sprite level BRT + a 2% size step per star gone)               // the brightness is built into the sprite (see BRT); here only a soft glow in the star's own colour, no white wash, so the hue survives
+      aura(ctx, x, y, mixHex(DAY_STARS[i][0], "#FFFFFF", 0.12), (big ? 5 : 4.2) * u * g0 * (1 + 0.12 * STEP), (0.025 + 0.035 * STEP) * Math.min(1.5, STAR_BRIGHT_RAMP), 0, 0)
+      ks = 1 + 0.025 * STEP
+    } else if (on && STEP > 0) {                                       // each star that goes out makes every survivor one clear step brighter and bigger (7 lit = 1.0x, 1 lit = the brightest): a hotter, wider core and halo on top of the cached sprite, still a crisp point
       aura(ctx, x, y, mixHex(DAY_STARS[i][0], "#FFFFFF", 0.35), (big ? 5 : 4.2) * u * g0 * (1 + 0.1 * STEP), 0.03 + 0.055 * STEP, 0, 0)
       aura(ctx, x, y, "#FFFFFF", (big ? 2.1 : 1.8) * u * g0 * (1 + 0.07 * STEP), 0.085 * STEP, 0, 0)
       ks = 1 + 0.075 * STEP                                     // the sprite itself is drawn bigger: core radius and halo both scale (1.0x .. 1.45x)
@@ -2082,6 +2251,7 @@ function render(family, W, H, bg) {
     if (!pure) shootingStar(ctx, W, H, [{ x: moon.x, y: moon.y, r: moon.R * 2 }, { x0: 0, y0: dotsY - 8, x1: W, y1: H }])
     dayDots(ctx, W, H, family, u)                       // stars first, so Earth and the Moon cover them (and their halos) if they ever meet
     if (MODE === "earthmoon") drawDrift(ctx, W, H, family, u); else drawMoon(ctx, moon.x, moon.y, moon.R)
+    if (CELESTIAL_STYLE === "sunmoon") celestialIcon(ctx, W, H, u)
     if (LABEL) starlightText(ctx, LABEL, label, labelSize, W / 2, H * 0.648, "center", labelSpan, shimmer)
     bodyLabel(ctx, W / 2, H * 0.538, H * 0.945, H * 0.9, "center", u)
   } else {
@@ -2090,6 +2260,7 @@ function render(family, W, H, bg) {
     if (!pure) shootingStar(ctx, W, H, [{ x: moon.x, y: moon.y, r: moon.R * 1.7 }, { x0: tx - 10, y0: H * 0.22, x1: W, y1: H }])
     dayDots(ctx, W, H, family, u)                       // stars first, so Earth and the Moon pass in front
     if (MODE === "earthmoon") drawDrift(ctx, W, H, family, u); else drawMoon(ctx, moon.x, moon.y, moon.R)
+    if (CELESTIAL_STYLE === "sunmoon") celestialIcon(ctx, W, H, u)
     if (LABEL) starlightText(ctx, LABEL, label, labelSize, tx + 1, H * 0.3, "left", labelSpan, shimmer)
     bodyLabel(ctx, tx + 1, H * 0.2, H * 0.89, H * 0.82, "left", u)
   }
